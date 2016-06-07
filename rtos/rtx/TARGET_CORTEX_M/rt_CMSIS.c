@@ -466,6 +466,10 @@ osMessageQId svcMessageCreate (const osMessageQDef_t *queue_def, osThreadId thre
 
 /// Initialize the RTOS Kernel for creating objects
 osStatus svcKernelInitialize (void) {
+
+  extern void uvisor_lib_init();
+  uvisor_lib_init();
+
 #ifdef __MBED_CMSIS_RTOS_CM
   if (!os_initialized) {
     rt_sys_init();                              // RTX System Initialization
