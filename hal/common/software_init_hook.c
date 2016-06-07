@@ -13,9 +13,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#ifdef   FEATURE_UVISOR
+#include "uvisor-lib/uvisor-lib.h"
+#endif/* FEATURE_UVISOR */
+
+#include "mbed_interface.h"
+
 extern void software_init_hook_rtos(void);
 
 void software_init_hook(void)
 {
+#ifdef   FEATURE_UVISOR
+    int return_code;
+
+    return_code = uvisor_lib_init();
+    if (return_code) {
+        mbed_die();
+    }
+#endif/* FEATURE_UVISOR */
+
     software_init_hook_rtos();
 }
