@@ -61,7 +61,7 @@ rsync:
 	rsync -a --delete $(UVISOR_API)/inc/ $(TARGET_INC)/uvisor/api/inc
 	#
 	# Copying uVisor source file to mbed source...
-	cp $(UVISOR_API)/src/unsupported.c $(TARGET_SRC)/
+	cp $(UVISOR_API)/src/unsupported.c $(TARGET_SRC)/TARGET_UVISOR_UNSUPPORTED/
 	#
 	# Copying licenses
 	cp $(UVISOR_DIR)/LICENSE* $(TARGET_LIB)
