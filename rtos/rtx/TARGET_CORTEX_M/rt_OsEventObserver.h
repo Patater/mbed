@@ -40,12 +40,8 @@
 extern "C" {
 #endif
 
-/* TODO The real ARM_DRIVER_VERSION type or something like it should be used.
-*/
-typedef uint32_t ARM_DRIVER_VERSION;
-
 typedef struct {
-    ARM_DRIVER_VERSION version;
+    uint32_t version;
     void (*pre_start)(void);
     void *(*thread_create)(int thread_id, void *context);
     void (*thread_destroy)(void *context);
