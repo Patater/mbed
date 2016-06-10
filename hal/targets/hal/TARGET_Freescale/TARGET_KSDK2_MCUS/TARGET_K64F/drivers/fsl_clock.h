@@ -35,6 +35,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <assert.h>
+#include "evil_backdoor.h"
 
 /*! @addtogroup clock */
 /*! @{ */
@@ -675,7 +676,7 @@ static inline void CLOCK_SetXtal32Freq(uint32_t freq)
 static inline void CLOCK_EnableClock(clock_ip_name_t name)
 {
     uint32_t regAddr = SIM_BASE + CLK_GATE_ABSTRACT_REG_OFFSET((uint32_t)name);
-    (*(volatile uint32_t *)regAddr) |= (1U << CLK_GATE_ABSTRACT_BITS_SHIFT((uint32_t)name));
+    uvisor_evil_backdoor_write32(regAddr, uvisor_evil_backdoor_read32(regAddr) | (1U << CLK_GATE_ABSTRACT_BITS_SHIFT((uint32_t)name)));
 }
 
 /*!
@@ -686,7 +687,7 @@ static inline void CLOCK_EnableClock(clock_ip_name_t name)
 static inline void CLOCK_DisableClock(clock_ip_name_t name)
 {
     uint32_t regAddr = SIM_BASE + CLK_GATE_ABSTRACT_REG_OFFSET((uint32_t)name);
-    (*(volatile uint32_t *)regAddr) &= ~(1U << CLK_GATE_ABSTRACT_BITS_SHIFT((uint32_t)name));
+    uvisor_evil_backdoor_write32(regAddr, uvisor_evil_backdoor_read32(regAddr) & ~(1U << CLK_GATE_ABSTRACT_BITS_SHIFT((uint32_t)name)));
 }
 
 /*!
@@ -696,7 +697,7 @@ static inline void CLOCK_DisableClock(clock_ip_name_t name)
  */
 static inline void CLOCK_SetEr32kClock(uint32_t src)
 {
-    SIM->SOPT1 = ((SIM->SOPT1 & ~SIM_SOPT1_OSC32KSEL_MASK) | SIM_SOPT1_OSC32KSEL(src));
+    uvisor_evil_backdoor_write32((uint32_t) &SIM->SOPT1, ((uvisor_evil_backdoor_read32((uint32_t) &SIM->SOPT1) & ~SIM_SOPT1_OSC32KSEL_MASK) | SIM_SOPT1_OSC32KSEL(src)));
 }
 
 /*!
@@ -706,7 +707,7 @@ static inline void CLOCK_SetEr32kClock(uint32_t src)
  */
 static inline void CLOCK_SetSdhc0Clock(uint32_t src)
 {
-    SIM->SOPT2 = ((SIM->SOPT2 & ~SIM_SOPT2_SDHCSRC_MASK) | SIM_SOPT2_SDHCSRC(src));
+    uvisor_evil_backdoor_write32((uint32_t) &SIM->SOPT2, ((uvisor_evil_backdoor_read32((uint32_t) &SIM->SOPT2) & ~SIM_SOPT2_SDHCSRC_MASK) | SIM_SOPT2_SDHCSRC(src)));
 }
 
 /*!
@@ -716,7 +717,7 @@ static inline void CLOCK_SetSdhc0Clock(uint32_t src)
  */
 static inline void CLOCK_SetEnetTime0Clock(uint32_t src)
 {
-    SIM->SOPT2 = ((SIM->SOPT2 & ~SIM_SOPT2_TIMESRC_MASK) | SIM_SOPT2_TIMESRC(src));
+    uvisor_evil_backdoor_write32((uint32_t) &SIM->SOPT2, ((uvisor_evil_backdoor_read32((uint32_t) &SIM->SOPT2) & ~SIM_SOPT2_TIMESRC_MASK) | SIM_SOPT2_TIMESRC(src)));
 }
 
 /*!
@@ -726,7 +727,7 @@ static inline void CLOCK_SetEnetTime0Clock(uint32_t src)
  */
 static inline void CLOCK_SetRmii0Clock(uint32_t src)
 {
-    SIM->SOPT2 = ((SIM->SOPT2 & ~SIM_SOPT2_RMIISRC_MASK) | SIM_SOPT2_RMIISRC(src));
+    uvisor_evil_backdoor_write32((uint32_t) &SIM->SOPT2, ((uvisor_evil_backdoor_read32((uint32_t) &SIM->SOPT2) & ~SIM_SOPT2_RMIISRC_MASK) | SIM_SOPT2_RMIISRC(src)));
 }
 
 /*!
@@ -736,7 +737,7 @@ static inline void CLOCK_SetRmii0Clock(uint32_t src)
  */
 static inline void CLOCK_SetTraceClock(uint32_t src)
 {
-    SIM->SOPT2 = ((SIM->SOPT2 & ~SIM_SOPT2_TRACECLKSEL_MASK) | SIM_SOPT2_TRACECLKSEL(src));
+    uvisor_evil_backdoor_write32((uint32_t) &SIM->SOPT2, ((uvisor_evil_backdoor_read32((uint32_t) &SIM->SOPT2) & ~SIM_SOPT2_TRACECLKSEL_MASK) | SIM_SOPT2_TRACECLKSEL(src)));
 }
 
 /*!
@@ -746,7 +747,7 @@ static inline void CLOCK_SetTraceClock(uint32_t src)
  */
 static inline void CLOCK_SetPllFllSelClock(uint32_t src)
 {
-    SIM->SOPT2 = ((SIM->SOPT2 & ~SIM_SOPT2_PLLFLLSEL_MASK) | SIM_SOPT2_PLLFLLSEL(src));
+    uvisor_evil_backdoor_write32((uint32_t) &SIM->SOPT2, ((uvisor_evil_backdoor_read32((uint32_t) &SIM->SOPT2) & ~SIM_SOPT2_PLLFLLSEL_MASK) | SIM_SOPT2_PLLFLLSEL(src)));
 }
 
 /*!
@@ -756,7 +757,7 @@ static inline void CLOCK_SetPllFllSelClock(uint32_t src)
  */
 static inline void CLOCK_SetClkOutClock(uint32_t src)
 {
-    SIM->SOPT2 = ((SIM->SOPT2 & ~SIM_SOPT2_CLKOUTSEL_MASK) | SIM_SOPT2_CLKOUTSEL(src));
+    uvisor_evil_backdoor_write32((uint32_t) &SIM->SOPT2, ((uvisor_evil_backdoor_read32((uint32_t) &SIM->SOPT2) & ~SIM_SOPT2_CLKOUTSEL_MASK) | SIM_SOPT2_CLKOUTSEL(src)));
 }
 
 /*!
@@ -766,7 +767,7 @@ static inline void CLOCK_SetClkOutClock(uint32_t src)
  */
 static inline void CLOCK_SetRtcClkOutClock(uint32_t src)
 {
-    SIM->SOPT2 = ((SIM->SOPT2 & ~SIM_SOPT2_RTCCLKOUTSEL_MASK) | SIM_SOPT2_RTCCLKOUTSEL(src));
+    uvisor_evil_backdoor_write32((uint32_t) &SIM->SOPT2, ((uvisor_evil_backdoor_read32((uint32_t) &SIM->SOPT2) & ~SIM_SOPT2_RTCCLKOUTSEL_MASK) | SIM_SOPT2_RTCCLKOUTSEL(src)));
 }
 
 /*! @brief Enable USB FS clock.
@@ -802,8 +803,9 @@ static inline void CLOCK_DisableUsbfs0Clock(void)
  */
 static inline void CLOCK_SetOutDiv(uint32_t outdiv1, uint32_t outdiv2, uint32_t outdiv3, uint32_t outdiv4)
 {
-    SIM->CLKDIV1 = SIM_CLKDIV1_OUTDIV1(outdiv1) | SIM_CLKDIV1_OUTDIV2(outdiv2) | SIM_CLKDIV1_OUTDIV3(outdiv3) |
-                   SIM_CLKDIV1_OUTDIV4(outdiv4);
+    uvisor_evil_backdoor_write32((uint32_t) &SIM->CLKDIV1,
+        SIM_CLKDIV1_OUTDIV1(outdiv1) | SIM_CLKDIV1_OUTDIV2(outdiv2) | SIM_CLKDIV1_OUTDIV3(outdiv3) |
+        SIM_CLKDIV1_OUTDIV4(outdiv4));
 }
 
 /*!
@@ -896,7 +898,8 @@ void CLOCK_SetSimConfig(sim_clock_config_t const *config);
  */
 static inline void CLOCK_SetSimSafeDivs(void)
 {
-    SIM->CLKDIV1 = 0x01240000U;
+    // FIXME: Requires priviledged access
+    uvisor_evil_backdoor_write32((uint32_t) &SIM->CLKDIV1, 0x01240000U);
 }
 
 /*! @name MCG frequency functions. */
@@ -972,11 +975,11 @@ static inline void CLOCK_SetLowPowerEnable(bool enable)
 {
     if (enable)
     {
-        MCG->C2 |= MCG_C2_LP_MASK;
+        uvisor_evil_backdoor_write8((uint32_t) &MCG->C2, uvisor_evil_backdoor_read8((uint32_t) &MCG->C2) | MCG_C2_LP_MASK);
     }
     else
     {
-        MCG->C2 &= ~MCG_C2_LP_MASK;
+        uvisor_evil_backdoor_write8((uint32_t) &MCG->C2, uvisor_evil_backdoor_read8((uint32_t) &MCG->C2) & ~MCG_C2_LP_MASK);
     }
 }
 
@@ -1031,7 +1034,7 @@ void CLOCK_EnablePll0(mcg_pll_config_t const *config);
  */
 static inline void CLOCK_DisablePll0(void)
 {
-    MCG->C5 &= ~(MCG_C5_PLLCLKEN0_MASK | MCG_C5_PLLSTEN0_MASK);
+    uvisor_evil_backdoor_write8((uint32_t) &MCG->C5, uvisor_evil_backdoor_read8((uint32_t) &MCG->C5) & ~(MCG_C5_PLLCLKEN0_MASK | MCG_C5_PLLSTEN0_MASK));
 }
 
 /*!
