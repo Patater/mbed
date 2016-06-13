@@ -33,6 +33,8 @@
 #include "api/inc/interrupts.h"
 #include "api/inc/register_gateway.h"
 #include "api/inc/secure_access.h"
+/* XXX */
+#include "api/inc/evil_backdoor.h"
 
 #else /* defined(UVISOR_PRESENT) && UVISOR_PRESENT == 1 */
 

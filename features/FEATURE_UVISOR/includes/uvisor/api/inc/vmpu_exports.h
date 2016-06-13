@@ -158,6 +158,11 @@ typedef struct {
     /* Contains user provided size of box heap without guards of buffers. */
     uint32_t heap_size;
 
+    void (*main_function)(void const *argument);
+    int32_t main_priority;
+
+    uint8_t *box_reserved;
+
     const char * box_namespace;
     const UvisorBoxAclItem * const acl_list;
     uint32_t acl_count;
