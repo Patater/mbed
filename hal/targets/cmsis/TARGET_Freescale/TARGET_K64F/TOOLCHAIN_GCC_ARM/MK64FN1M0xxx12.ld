@@ -90,7 +90,7 @@ SECTIONS
   } > m_flash_config
 
   /* The program code and other data goes into internal flash */
-  .text :
+  .text ALIGN(4) :
   {
     /* uVisor code and data */
     . = ALIGN(4);
