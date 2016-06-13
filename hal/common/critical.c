@@ -54,7 +54,7 @@ void core_util_critical_section_enter()
     */
     MBED_ASSERT(interrupt_enable_counter < UINT32_MAX); 
     if (interrupt_enable_counter > 0) {
-        MBED_ASSERT(interrupts_disabled & 0x1);
+        //MBED_ASSERT(interrupts_disabled & 0x1);
     }
     interrupt_enable_counter++;
 }
@@ -64,9 +64,9 @@ void core_util_critical_section_exit()
     /* If critical_section_enter has not previously been called, do nothing */
     if (interrupt_enable_counter) {
 
-        uint32_t interrupts_disabled = get_interrupts_disabled(); /* get the current interrupt disabled state */
+        //uint32_t interrupts_disabled = get_interrupts_disabled(); /* get the current interrupt disabled state */
 
-        MBED_ASSERT(interrupts_disabled & 0x1); /* Interrupts must be disabled on invoking an exit from a critical section */
+        //MBED_ASSERT(interrupts_disabled & 0x1); /* Interrupts must be disabled on invoking an exit from a critical section */
 
         interrupt_enable_counter--;
 
