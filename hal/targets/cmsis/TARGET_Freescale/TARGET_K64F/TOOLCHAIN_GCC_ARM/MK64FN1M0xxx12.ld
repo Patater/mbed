@@ -211,10 +211,10 @@ SECTIONS
 
     /* protected uvisor main bss */
     . = ALIGN(32);
-    __uvisor_bss_main_start = .;
-    KEEP(*(.keep.uvisor.bss.main))
+    __uvisor_sram_main_start = .;
+    KEEP(*(.keep.uvisor.sram.main))
     . = ALIGN(32);
-    __uvisor_bss_main_end = .;
+    __uvisor_sram_main_end = .;
 
     /* protected uvisor secure boxes bss */
     . = ALIGN(32);
