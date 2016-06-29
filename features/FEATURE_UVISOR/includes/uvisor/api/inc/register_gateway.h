@@ -92,7 +92,7 @@
         (void) register_gateway_ptr; \
         \
         /* Call the actual gateway. */ \
-        uint32_t result = ((uint32_t (*)(void)) ((uint32_t) &register_gateway | 1))(); \
+        uint32_t result = ((uint32_t (*)(void)) (((uint8_t*)&register_gateway) + 1)(); \
         (typeof(*addr)) result; \
     })
 

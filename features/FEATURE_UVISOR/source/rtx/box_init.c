@@ -28,6 +28,14 @@ void __uvisor_lib_box_init(void * lib_config)
     osThreadDef_t * flash_thread_def = lib_config;
     osThreadDef_t thread_def;
 
+#if 0
+    /* XXX The box init function can create the inbound rpc queue, once it gets
+     * specified in the box config. We do this manually here for now. */
+    /* XXX The queue_id is not static. It is generated at run time. The mail
+     * queue data is static, though. */
+    box_led1_rpc_receive_q_id = osMailCreate(osMailQ(box_led1_rpc_receive_q), NULL);
+#endif
+
     /* Copy thread definition from flash to RAM. The thread definition is most
      * likely in flash, so we need to copy it to box-local RAM before we can
      * modify it. */
