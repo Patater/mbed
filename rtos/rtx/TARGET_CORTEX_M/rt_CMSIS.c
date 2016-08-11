@@ -44,6 +44,8 @@
   #include "core_cm0.h"
 #elif defined (__CORTEX_M0PLUS)
   #include "core_cm0plus.h"
+#elif defined (__CORTEX_M81)
+  #include "core_armv8mml.h"
 #else
   #error "Missing __CORTEX_Mx definition"
 #endif

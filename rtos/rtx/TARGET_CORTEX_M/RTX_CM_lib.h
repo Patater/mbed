@@ -393,7 +393,9 @@ osThreadDef_t os_thread_def_main = {(os_pthread)pre_main, osPriorityNormal, 1U, 
 
 
 // This define should be probably moved to the CMSIS layer
-#if   defined(TARGET_LPC1768)
+#if     defined(TARGET_ARM_MPS2_ARMv8MML)
+#define INITIAL_SP            (0x20400000UL)
+#elif   defined(TARGET_LPC1768)
 #define INITIAL_SP            (0x10008000UL)
 
 #elif defined(TARGET_LPC11U24)
