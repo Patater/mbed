@@ -31,7 +31,7 @@ class GCC(mbedToolchain):
     DEFAULT_FLAGS = {
         'common': ["-c", "-Wall", "-Wextra",
             "-Wno-unused-parameter", "-Wno-missing-field-initializers",
-            "-fmessage-length=0", "-fno-exceptions", "-fno-builtin",
+            "-fmessage-length=0", "-fno-exceptions", "-fno-unwind-tables", "-fno-builtin",
             "-ffunction-sections", "-fdata-sections", "-funsigned-char",
             "-MMD", "-fno-delete-null-pointer-checks", "-fomit-frame-pointer"
             ],
