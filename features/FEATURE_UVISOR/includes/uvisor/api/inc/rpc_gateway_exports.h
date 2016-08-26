@@ -41,19 +41,25 @@
 #error "Unsupported instruction set. The ARM Thumb-2 instruction set must be supported."
 #endif   /* __thumb__ && __thumb2__ */
 
+/* ldr pc, [pc, #<label - instr + 4>]
+ * LDR (immediate) - ARMv7M ARM section A7.7.42
+ * 1111;1 00 0; 0 10 1; <Rn - 1111>; <Rt - 1111>; <imm12> (Encoding T3) */
+#define LDR_PC_PC_IMM_OPCODE(instr, label) \
+    ((uint32_t) (0xF000F8DFUL | ((((uint32_t) (label) - ((uint32_t) (instr) + 4)) & 0xFFFUL) << 16)))
 
 /** RPC gateway structure
  *
  * This struct is packed because we must ensure that the `ldr_pc` field has no
  * padding before itself and will be located at a valid instruction location,
- * and that the `function` field is at a pre-determined offset from the
- * `ldr_pc` field.
+ * and that the `caller` and `target` field are at a pre-determined offset from
+ * the `ldr_pc` field.
  */
-typedef struct {
+typedef struct RPCGateway {
     uint32_t ldr_pc;
     uint32_t magic;
     uint32_t box_ptr;
-    uint32_t function; /* It's like a pretend literal pool. */
+    uint32_t target;
+    uint32_t caller; /* This is not for use by anything other than the ldr_pc. It's like a pretend literal pool. */
 } UVISOR_PACKED UVISOR_ALIGN(4) TRPCGateway;
 
 #endif /* __UVISOR_API_RPC_GATEWAY_EXPORTS_H__ */
