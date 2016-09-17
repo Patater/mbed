@@ -94,10 +94,10 @@ class GCC(mbedToolchain):
             self.flags["common"].append("-save-temps")
 
         if "debug-info" in self.options:
-            self.flags["common"].append("-g")
             self.flags["common"].append("-O0")
         else:
             self.flags["common"].append("-Os")
+        self.flags["common"].append("-g")
 
         main_cc = join(tool_path, "arm-none-eabi-gcc")
         main_cppc = join(tool_path, "arm-none-eabi-g++")
