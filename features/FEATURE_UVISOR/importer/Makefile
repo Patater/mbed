@@ -98,7 +98,7 @@ publish: rsync TARGET_M3 TARGET_M4
 	$(foreach target, $(TARGET_TRANSLATION),mv $(TARGET_SUPPORTED)/$(subst .,,$(suffix $(target))) $(TARGET_SUPPORTED)/TARGET_$(basename $(target));)
 
 uvisor-compile: $(UVISOR_GIT_CFG)
-	make -C $(UVISOR_DIR)
+	$(MAKE) -C $(UVISOR_DIR)
 
 update: $(UVISOR_GIT_CFG)
 	#
@@ -116,4 +116,4 @@ $(UVISOR_GIT_CFG):
 	git clone -b $(UVISOR_GIT_BRANCH) $(UVISOR_GIT_URL) $(UVISOR_DIR)
 
 clean: $(UVISOR_GIT_CFG)
-	make -C $(UVISOR_DIR) clean
+	$(MAKE) -C $(UVISOR_DIR) clean
