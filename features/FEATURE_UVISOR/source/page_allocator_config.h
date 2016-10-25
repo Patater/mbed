@@ -23,10 +23,10 @@
 
 /* We can only protect a small number of pages efficiently, so there should be
  * a relatively low limit to the number of pages.
- * By default a maximum of 16 pages are allowed. This can only be overwritten
- * by the porting engineer for the current platform. */
+ * By default a certain maximum number of pages are allowed. This can only be
+ * overwritten by the porting engineer for the current platform. */
 #ifndef UVISOR_PAGE_MAX_COUNT
-#define UVISOR_PAGE_MAX_COUNT (16UL)
+#define UVISOR_PAGE_MAX_COUNT (128UL)
 #endif
 /* The number of pages is decided by the page size. A small page size leads to
  * a lot of pages, however, number of pages is capped for efficiency.
@@ -34,7 +34,7 @@
  * will lead to allocation failures. This can only be overwritten
  * by the porting engineer for the current platform. */
 #ifndef UVISOR_PAGE_SIZE_MINIMUM
-#define UVISOR_PAGE_SIZE_MINIMUM (1024UL)
+#define UVISOR_PAGE_SIZE_MINIMUM (256UL)
 #endif
 
 /* Defines the number of uint32_t page owner masks in the owner map.
