@@ -24,6 +24,7 @@
  */
 
 #include "rtx_lib.h"
+#include "rt_OsEventObserver.h"
 
 
 //  ==== Helper functions ====
@@ -385,6 +386,10 @@ void os_ThreadSwitch (os_thread_t *thread) {
   thread->state = os_ThreadRunning;
   os_Info.thread.run.next = thread;
   os_ThreadStackCheck();
+
+  if (osEventObs && osEventObs->thread_switch) {
+    osEventObs->thread_switch(thread->context);
+  }
 }
 
 /// Dispatch specified Thread or Ready Thread with Highest Priority.
@@ -710,6 +715,13 @@ osThreadId_t os_svcThreadNew (os_thread_func_t func, void *argument, const osThr
 
   // Register post ISR processing function
   os_Info.post_process.thread = os_ThreadPostProcess;
+
+  /* Notify the OS event observer of a new thread. */
+  if (osEventObs && osEventObs->thread_create) {
+    thread->context = osEventObs->thread_create((int)thread, context);
+  } else {
+    thread->context = context;
+  }
 
   os_ThreadDispatch(thread);
 
@@ -1111,6 +1123,10 @@ osStatus_t os_svcThreadTerminate (osThreadId_t thread_id) {
     case os_ThreadTerminated:
     default:
       return osErrorResource;
+  }
+
+  if (osEventObs && osEventObs->thread_destroy) {
+    osEventObs->thread_destroy(thread->context);
   }
 
   // Release owned Mutexes

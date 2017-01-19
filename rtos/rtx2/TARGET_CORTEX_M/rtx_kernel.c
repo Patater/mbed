@@ -24,6 +24,7 @@
  */
 
 #include "rtx_lib.h"
+#include "rt_OsEventObserver.h"
 
 
 //  OS Runtime Information
@@ -471,6 +472,15 @@ osStatus_t osKernelStart (void) {
   if (IS_IRQ_MODE() || IS_IRQ_MASKED()) {
     return osErrorISR;
   }
+
+  /* Call the pre-start event (from unprivileged mode) if the handler exists
+   * and the kernel is not running. */
+  /* FIXME osEventObs needs to be readbale but not writable from unprivileged
+   * code. */
+  if (os_Info.kernel.state != osKernelRunning && osEventObs && osEventObs->pre_start) {
+    osEventObs->pre_start();
+  }
+
   switch (__get_CONTROL() & 0x03U) {
     case 0x00U:                                 // Privileged Thread mode & MSP
 #if ( (__ARM_ARCH_8M_MAIN__ == 1U) || \
