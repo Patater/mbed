@@ -37,6 +37,7 @@ UVISOR_EXTERN const uint32_t __uvisor_page_size;
 typedef struct {
     uint32_t page_size;     /* The page size in bytes. Must be multiple of `UVISOR_PAGE_SIZE`! */
     uint32_t page_count;    /* The number of pages in the page table. */
+    uint32_t padding;       /* Padding to make the pool (mem + offset) 8-byte aligned XXX Not sure if this is best way to do it. */
     void * page_origins[1]; /* Table of pointers to the origin of each page. */
 } UvisorPageTable;
 

@@ -30,6 +30,7 @@
 #define vmpu_is_box_id_valid(...) 0
 #define vmpu_public_flash_addr(...) 1
 #define vmpu_sram_addr(...) 1
+#define vmpu_public_sram_addr(...) 1
 #define HALT_ERROR(id, ...) {}
 #define UVISOR_PAGE_ALLOCATOR_MUTEX_AQUIRE  page_allocator_mutex_aquire()
 #define UVISOR_PAGE_ALLOCATOR_MUTEX_RELEASE osMutexRelease(g_page_allocator_mutex_id)
@@ -50,22 +51,28 @@ int uvisor_page_free(const UvisorPageTable *const table)
 }
 
 /* Implement mutex for page allocator. */
-static osMutexId g_page_allocator_mutex_id = NULL;
-static int32_t g_page_allocator_mutex_data[4];
-static const osMutexDef_t g_page_allocator_mutex = { g_page_allocator_mutex_data };
+/* XXX */
+static osMutexId_t g_page_allocator_mutex_id = NULL;
+static os_mutex_t g_page_allocator_mutex_data;
+static osMutexDef_t g_page_allocator_mutex_attr = {
+  .name = "",
+  .attr_bits = 0, /* XXX See if we need osMutexRecursive or not. I'd rather not. */
+  .cb_mem = &g_page_allocator_mutex_data,
+  .cb_size = sizeof(g_page_allocator_mutex_data)
+};
 
 static void page_allocator_mutex_aquire()
 {
     if (g_page_allocator_mutex_id == NULL) {
         /* Create mutex if not already done. */
-        g_page_allocator_mutex_id = osMutexCreate(&g_page_allocator_mutex);
+        g_page_allocator_mutex_id = osMutexNew(&g_page_allocator_mutex_attr);
         if (g_page_allocator_mutex_id == NULL) {
             /* Mutex failed to be created. */
             return;
         }
     }
 
-    osMutexWait(g_page_allocator_mutex_id, osWaitForever);
+    osMutexAcquire(g_page_allocator_mutex_id, osWaitForever);
 }
 
 /* Alignment of MPU regions is not required anymore, however we still require
