@@ -206,7 +206,8 @@ osStatus_t os_svcKernelInitialize (void) {
   os_Info.thread.idle = (os_thread_t *)(os_svcThreadNew(
                                           os_IdleThread,
                                           NULL,
-                                          os_Config.idle_thread_attr));
+                                          os_Config.idle_thread_attr,
+                                          NULL));
   if (os_Info.thread.idle == NULL) {
     return osError;
   }

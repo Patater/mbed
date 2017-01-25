@@ -128,6 +128,7 @@ typedef struct os_thread_s {
   uint32_t                 stack_size;  ///< Stack Size
   uint32_t                         sp;  ///< Current Stack Pointer
   uint32_t                  tz_memory;  ///< TrustZone Memory Identifier
+  void                       *context;  ///< Context for OsEventObserver objects
 } os_thread_t;
 
 

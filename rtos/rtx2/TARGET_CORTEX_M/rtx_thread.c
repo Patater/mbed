@@ -503,7 +503,7 @@ void os_ThreadPostProcess (os_thread_t *thread) {
 //  ==== Service Calls ====
 
 //  Service Calls definitions
-SVC0_3 (ThreadNew,           osThreadId_t,    os_thread_func_t, void *, const osThreadAttr_t *)
+SVC0_4 (ThreadNew,           osThreadId_t,    os_thread_func_t, void *, const osThreadAttr_t *, void *)
 SVC0_1 (ThreadGetName,       const char *,    osThreadId_t)
 SVC0_0 (ThreadGetId,         osThreadId_t)
 SVC0_1 (ThreadGetState,      osThreadState_t, osThreadId_t)
@@ -526,8 +526,8 @@ SVC0_0 (ThreadFlagsGet,      int32_t)
 SVC0_3 (ThreadFlagsWait,     int32_t,         int32_t, uint32_t, uint32_t)
 
 /// Create a thread and add it to Active Threads.
-/// \note API identical to osThreadNew
-osThreadId_t os_svcThreadNew (os_thread_func_t func, void *argument, const osThreadAttr_t *attr) {
+/// \note API identical to osThreadContextNew
+osThreadId_t os_svcThreadNew (os_thread_func_t func, void *argument, const osThreadAttr_t *attr, void *context) {
   os_thread_t  *thread;
   uint32_t      attr_bits;
   void         *stack_mem;
@@ -1366,14 +1366,18 @@ int32_t os_isrThreadFlagsSet (osThreadId_t thread_id, int32_t flags) {
 
 /// Create a thread and add it to Active Threads.
 osThreadId_t osThreadNew (os_thread_func_t func, void *argument, const osThreadAttr_t *attr) {
+  return osThreadContextNew(func, argument, attr, NULL);
+}
+
+osThreadId_t osThreadContextNew (os_thread_func_t func, void *argument, const osThreadAttr_t *attr, void *context) {
   if (IS_IRQ_MODE() || IS_IRQ_MASKED()) {
     return NULL;
   }
   if ((os_KernelGetState() == os_KernelReady) && IS_PRIVILEGED()) {
     // Kernel Ready (not running) and in Privileged mode
-    return os_svcThreadNew(func, argument, attr);
+    return os_svcThreadNew(func, argument, attr, context);
   } else {
-    return  __svcThreadNew(func, argument, attr);
+    return  __svcThreadNew(func, argument, attr, context);
   }
 }
 

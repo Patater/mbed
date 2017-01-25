@@ -156,7 +156,8 @@ osTimerId_t os_svcTimerNew (os_timer_func_t func, osTimerType_t type, void *argu
     os_Info.timer.thread = (os_thread_t *)(os_svcThreadNew(
                                              os_TimerThread,
                                              NULL,
-                                             os_Config.timer_thread_attr));
+                                             os_Config.timer_thread_attr,
+                                             NULL));
     if (os_Info.timer.thread == NULL) {
       return NULL;
     }

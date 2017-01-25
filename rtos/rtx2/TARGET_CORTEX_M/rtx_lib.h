@@ -113,7 +113,7 @@ extern uint32_t         os_svcKernelGetSysTimerCount (void);
 extern uint32_t         os_svcKernelGetSysTimerFreq  (void);
 
 // Thread Service Calls
-extern osThreadId_t     os_svcThreadNew          (os_thread_func_t func, void *argument, const osThreadAttr_t *attr);
+extern osThreadId_t     os_svcThreadNew          (os_thread_func_t func, void *argument, const osThreadAttr_t *attr, void *context);
 extern const char *     os_svcThreadGetName      (osThreadId_t thread_id);
 extern osThreadId_t     os_svcThreadGetId        (void);
 extern osThreadState_t  os_svcThreadGetState     (osThreadId_t thread_id);
