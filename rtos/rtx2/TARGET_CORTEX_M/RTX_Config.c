@@ -139,6 +139,9 @@
 //     <0=> Unprivileged mode 
 //     <1=> Privileged mode
 //   <i> Default: Privileged mode
+#if defined(FEATURE_UVISOR) && defined(TARGET_UVISOR_SUPPORTED)
+#define OS_PRIVILEGE_MODE           0
+#endif
 #ifndef OS_PRIVILEGE_MODE
 #define OS_PRIVILEGE_MODE           1
 #endif
