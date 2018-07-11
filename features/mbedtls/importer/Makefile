@@ -39,6 +39,7 @@ TARGET_TESTS:=$(TARGET_PREFIX)TESTS
 MBED_TLS_URL:=git@github.com:ARMmbed/mbedtls-restricted.git
 MBED_TLS_DIR:=TARGET_IGNORE/mbedtls
 MBED_TLS_API:=$(MBED_TLS_DIR)/include/mbedtls
+MBED_CRYPTO_API:=$(MBED_TLS_DIR)/include/psa
 MBED_TLS_GIT_CFG=$(MBED_TLS_DIR)/.git/config
 
 .PHONY: all deploy deploy-tests rsync mbedtls clean update
@@ -57,6 +58,7 @@ rsync:
 	rm -rf $(TARGET_INC)
 	mkdir -p $(TARGET_INC)
 	rsync -a --delete $(MBED_TLS_API) $(TARGET_INC)
+	rsync -a --delete $(MBED_CRYPTO_API) $(TARGET_INC)
 	#
 	# Copying licenses
 	cp $(MBED_TLS_DIR)/LICENSE $(TARGET_PREFIX)
