@@ -1201,6 +1201,7 @@ void ssl_calc_verify_tls_sha256( mbedtls_ssl_context *ssl, unsigned char hash[32
 
     MBEDTLS_SSL_DEBUG_MSG( 2, ( "=> calc verify sha256" ) );
 
+    printf("clone from %s\n", __FUNCTION__);
     mbedtls_sha256_clone( &sha256, &ssl->handshake->fin_sha256 );
     mbedtls_sha256_finish_ret( &sha256, hash );
 
@@ -6169,6 +6170,7 @@ static void ssl_calc_finished_tls_sha256(
 
     MBEDTLS_SSL_DEBUG_MSG( 2, ( "=> calc  finished tls sha256" ) );
 
+    printf("clone from %s\n", __FUNCTION__);
     mbedtls_sha256_clone( &sha256, &ssl->handshake->fin_sha256 );
 
     /*

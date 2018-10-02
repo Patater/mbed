@@ -48,6 +48,7 @@ typedef struct {
     uint32_t ctx_save_cr;
     uint32_t ctx_save_str;
     uint32_t ctx_save_csr[38];
+    int init;
 }
 mbedtls_sha256_context;
 
