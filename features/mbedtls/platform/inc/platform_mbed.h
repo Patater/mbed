@@ -56,7 +56,6 @@
  * They are related to the persistent key storage feature.
  */
 #define MBEDTLS_PSA_CRYPTO_STORAGE_C
-#define MBEDTLS_PSA_CRYPTO_STORAGE_ITS_C
 #undef MBEDTLS_PSA_CRYPTO_STORAGE_FILE_C
 #endif
 
