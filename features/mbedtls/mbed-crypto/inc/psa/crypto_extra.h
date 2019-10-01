@@ -45,21 +45,14 @@ extern "C" {
 #if !defined(MBEDTLS_DEPRECATED_REMOVED)
 #define PSA_ERROR_UNKNOWN_ERROR \
     MBEDTLS_DEPRECATED_NUMERIC_CONSTANT( PSA_ERROR_GENERIC_ERROR )
-#endif
-
-#if !defined(MBEDTLS_DEPRECATED_REMOVED)
 #define PSA_ERROR_OCCUPIED_SLOT \
     MBEDTLS_DEPRECATED_NUMERIC_CONSTANT( PSA_ERROR_ALREADY_EXISTS )
-#endif
-
-#if !defined(MBEDTLS_DEPRECATED_REMOVED)
 #define PSA_ERROR_EMPTY_SLOT \
     MBEDTLS_DEPRECATED_NUMERIC_CONSTANT( PSA_ERROR_DOES_NOT_EXIST )
-#endif
-
-#if !defined(MBEDTLS_DEPRECATED_REMOVED)
 #define PSA_ERROR_INSUFFICIENT_CAPACITY \
     MBEDTLS_DEPRECATED_NUMERIC_CONSTANT( PSA_ERROR_INSUFFICIENT_DATA )
+#define PSA_ERROR_TAMPERING_DETECTED \
+    MBEDTLS_DEPRECATED_NUMERIC_CONSTANT( PSA_ERROR_CORRUPTION_DETECTED )
 #endif
 
 /** \addtogroup attributes
@@ -193,6 +186,9 @@ static inline void psa_clear_key_slot_number(
  * \retval #PSA_ERROR_ALREADY_EXISTS
  *         There is already a key with the identifier specified in
  *         \p attributes.
+ * \retval #PSA_ERROR_NOT_SUPPORTED
+ *         The secure element driver for the specified lifetime does not
+ *         support registering a key.
  * \retval #PSA_ERROR_INVALID_ARGUMENT
  *         \p attributes specifies a lifetime which is not located
  *         in a secure element.
