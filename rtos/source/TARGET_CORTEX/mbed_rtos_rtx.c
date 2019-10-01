@@ -28,8 +28,8 @@
 #include "spm_init.h"
 #include "spm_api.h"
 #endif
-#if defined(TARGET_TFM) && defined(COMPONENT_NSPE)
-#include "TARGET_TFM/interface/include/tfm_ns_lock.h"
+#if defined(FEATURE_TFM) && defined(FEATURE_NSPE)
+#include "FEATURE_TFM/interface/include/tfm_ns_lock.h"
 #endif
 
 #if defined(TARGET_TFM_TWINCPU)
@@ -39,7 +39,7 @@
 #include "tfm_ns_interface.h"
 #endif
 
-#if defined(COMPONENT_NSPE) && defined(COMPONENT_SPM_MAILBOX)
+#if defined(FEATURE_NSPE) && defined(FEATURE_SPM_MAILBOX)
 
 MBED_ALIGN(8) char psa_spm_dispatcher_th_stack[0x100];
 mbed_rtos_storage_thread_t psa_spm_dispatcher_th_tcb;
@@ -52,7 +52,7 @@ const osThreadAttr_t psa_spm_dispatcher_th_attr = {
     .cb_size    = sizeof(psa_spm_dispatcher_th_tcb)
 };
 
-#endif // defined(COMPONENT_NSPE) && defined(COMPONENT_SPM_MAILBOX)
+#endif // defined(FEATURE_NSPE) && defined(FEATURE_SPM_MAILBOX)
 
 osThreadAttr_t _main_thread_attr;
 
@@ -120,9 +120,9 @@ MBED_NORETURN void mbed_rtos_start()
     _main_thread_attr.tz_module = 1U;
 #endif
 
-#if defined(COMPONENT_SPM_MAILBOX)
+#if defined(FEATURE_SPM_MAILBOX)
     spm_ipc_mailbox_init();
-#endif // defined(COMPONENT_SPM_MAILBOX)
+#endif // defined(FEATURE_SPM_MAILBOX)
 
 #if defined(TARGET_MBED_SPM)
 
@@ -132,17 +132,17 @@ MBED_NORETURN void mbed_rtos_start()
     spm_hal_start_nspe();
 #endif // defined(COMPONENT_SPE)
 
-#if defined(COMPONENT_NSPE) && defined(COMPONENT_SPM_MAILBOX)
+#if defined(FEATURE_NSPE) && defined(FEATURE_SPM_MAILBOX)
     osThreadId_t spm_result = osThreadNew((osThreadFunc_t)psa_spm_mailbox_dispatcher, NULL, &psa_spm_dispatcher_th_attr);
     if ((void *)spm_result == NULL) {
         MBED_ERROR1(MBED_MAKE_ERROR(MBED_MODULE_PLATFORM, MBED_ERROR_CODE_INITIALIZATION_FAILED), "Dispatcher thread not created", &psa_spm_dispatcher_th_attr);
     }
-#endif // defined(COMPONENT_NSPE) && defined(COMPONENT_SPM_MAILBOX)
+#endif // defined(FEATURE_NSPE) && defined(FEATURE_SPM_MAILBOX)
 #endif // defined(TARGET_MBED_SPM)
 
-#if defined(TARGET_TFM) && defined(COMPONENT_NSPE)
+#if defined(FEATURE_TFM) && defined(FEATURE_NSPE)
     tfm_ns_lock_init();
-#endif // defined(TARGET_TFM) && defined(COMPONENT_NSPE)
+#endif // defined(FEATURE_TFM) && defined(FEATURE_NSPE)
 
 #if defined(TARGET_TFM_TWINCPU)
     tfm_ns_multi_core_boot();
