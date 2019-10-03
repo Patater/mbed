@@ -98,11 +98,7 @@
         ],
         "public": false
     },
-    "PSA_V7_M_SPE": {
-        "inherits": ["PSA_Target"],
-        "public": false
-    },
-    "PSA_DUAL_V7_M_NSPE": {
+    "PSA_DUAL_CORE_NSPE": {
         "inherits": [
             "PSA_Target"
         ],
@@ -113,12 +109,11 @@
         "device_has": [
             "TRNG"
         ],
-        "public": false
-    },
-    "PSA_DUAL_V7_M_SPE": {
-        "inherits": [
-            "PSA_Target"
-        ],
+        "tfm_target_name": "",
+        "tfm_bootloader_supported": "",
+        "tfm_default_toolchain": "ARMCLANG",
+        "tfm_supported_toolchains": null,
+        "delivery_dir": "",
         "public": false
     },
     "PSA_V8_M_NSPE": {
@@ -132,12 +127,11 @@
         "device_has": [
             "TRNG"
         ],
-        "public": false
-    },
-    "PSA_V8_M_SPE": {
-        "inherits": [
-            "PSA_Target"
-        ],
+        "tfm_target_name": "",
+        "tfm_bootloader_supported": "",
+        "tfm_default_toolchain": "ARMCLANG",
+        "tfm_supported_toolchains": null,
+        "delivery_dir": "",
         "public": false
     },
     "CM4_UARM": {
@@ -13090,7 +13084,7 @@
         ],
         "core": "Cortex-M4F",
         "OUTPUT_EXT": "hex",
-        "device_has": [
+        "device_has_add": [
             "ANALOGIN",
             "ANALOGOUT",
             "CRC",
@@ -13122,7 +13116,7 @@
         "release_versions": [
             "5"
         ],
-        "extra_labels": [
+        "extra_labels_add": [
             "Cypress",
             "PSOC6",
             "MXCRYPTO"
