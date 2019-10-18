@@ -274,17 +274,24 @@ int mbedtls_x509write_csr_pem( mbedtls_x509write_csr *ctx, unsigned char *buf, s
                        void *p_rng )
 {
     int ret;
-    unsigned char output_buf[4096];
+    unsigned char *output_buf;
+    enum { OUTPUT_BUF_LEN = 4096 };
     size_t olen = 0;
 
-    if( ( ret = mbedtls_x509write_csr_der( ctx, output_buf, sizeof(output_buf),
+    output_buf = malloc(OUTPUT_BUF_LEN);
+    if (output_buf == NULL)
+    {
+        return -1;
+    }
+
+    if( ( ret = mbedtls_x509write_csr_der( ctx, output_buf, OUTPUT_BUF_LEN,
                                    f_rng, p_rng ) ) < 0 )
     {
         return( ret );
     }
 
     if( ( ret = mbedtls_pem_write_buffer( PEM_BEGIN_CSR, PEM_END_CSR,
-                                  output_buf + sizeof(output_buf) - ret,
+                                  output_buf + OUTPUT_BUF_LEN - ret,
                                   ret, buf, size, &olen ) ) != 0 )
     {
         return( ret );
