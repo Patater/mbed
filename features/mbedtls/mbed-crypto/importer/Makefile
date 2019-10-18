@@ -29,8 +29,8 @@
 
 # Set the Mbed Crypto release to import (this can/should be edited before
 # import)
-CRYPTO_RELEASE ?= psa-se_driver-validate_save_persistent
-CRYPTO_REPO_URL ?= git@github.com:gilles-peskine-arm/mbed-crypto.git
+CRYPTO_RELEASE ?= development
+CRYPTO_REPO_URL ?= git@github.com:ARMmbed/mbed-crypto.git
 
 # Translate between Mbed Crypto namespace and Mbed OS namespace
 TARGET_PREFIX:=..
