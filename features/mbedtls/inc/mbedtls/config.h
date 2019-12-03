@@ -194,8 +194,6 @@
 /* Needed for certificates in ssl_opt.sh */
 //#define MBEDTLS_FS_IO
 
-#undef MBEDTLS_NO_PLATFORM_ENTROPY
-
 #undef  MBEDTLS_ENTROPY_MAX_SOURCES
 #define MBEDTLS_ENTROPY_MAX_SOURCES 3
 
