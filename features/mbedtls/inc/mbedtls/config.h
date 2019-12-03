@@ -34,6 +34,8 @@
 #ifndef MBEDTLS_BAREMETAL_CONFIG_H
 #define MBEDTLS_BAREMETAL_CONFIG_H
 
+#include "platform/inc/platform_mbed.h"
+
 /* Symmetric crypto: AES-CCM only */
 #define MBEDTLS_CIPHER_C
 #define MBEDTLS_AES_C
