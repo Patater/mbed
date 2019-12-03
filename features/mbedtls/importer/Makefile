@@ -52,11 +52,13 @@ rsync:
 	# Copying mbed TLS into mbed library...
 	rm -rf $(TARGET_SRC)
 	rsync -a --exclude='*.txt' $(MBED_TLS_DIR)/library/ $(TARGET_SRC)
+	rsync -a --exclude='*.txt' $(MBED_TLS_DIR)/tinycrypt/ $(TARGET_SRC)
 	#
 	# Copying mbed TLS headers to mbed includes...
 	rm -rf $(TARGET_INC)
 	mkdir -p $(TARGET_INC)
 	rsync -a --delete $(MBED_TLS_API) $(TARGET_INC)
+	rsync -a --delete $(MBED_TLS_DIR)/include/tinycrypt $(TARGET_INC)
 	#
 	# Copying licenses
 	cp $(MBED_TLS_DIR)/LICENSE $(TARGET_PREFIX)
