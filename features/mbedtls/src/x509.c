@@ -42,6 +42,11 @@
 #include "mbedtls/asn1.h"
 #include "mbedtls/oid.h"
 
+/* XXX We have to avoid doing this optimization like this for now, because Mbed
+ * OS finds the C files and forces them to get build, even though we only want
+ * to include them. We can manually inline them, or enhance our importer script
+ * to do the inlining for us. */
+#if 0
 /* We include x509xxx.c files here so that x509.c is one compilation unit including
  * all the x509 files. This is done because some of the internal functions are shared.
  * For code size savings internal functions should be static so that compiler can do better job
@@ -53,6 +58,7 @@
 #include "x509_create.c"
 #include "x509write_crt.c"
 #include "x509write_csr.c"
+#endif
 
 #include <stdio.h>
 #include <string.h>
