@@ -146,6 +146,7 @@
 #define MBEDTLS_DEPRECATED_REMOVED
 
 
+#if 0
 /**
  * \file baremetal_test.h
  *
@@ -198,6 +199,7 @@
 #define MBEDTLS_ENTROPY_MAX_SOURCES 3
 
 #endif /* MBEDTLS_BAREMETAL_USER_CONFIG_H */
+#endif
 
 /* XXX Turn on features needed for nanoclient */
 //#define MBEDTLS_CIPHER_MODE_CTR
