@@ -143,7 +143,6 @@
 /* Server-side only */
 #define MBEDTLS_SSL_SRV_C
 
-#define MBEDTLS_DEPRECATED_REMOVED
 
 
 #if 0
@@ -207,6 +206,9 @@
 #define MBEDTLS_SSL_CONF_CID_LEN 4
 #define MBEDTLS_SSL_MAX_FRAGMENT_LENGTH
 #undef MBEDTLS_SSL_SRV_C
+
+/* XXX Mbed OS unfortunately uses some deprecated Mbed TLS APIs still. */
+#undef MBEDTLS_DEPRECATED_REMOVED
 
 #if defined(MBEDTLS_USER_CONFIG_FILE)
 #include MBEDTLS_USER_CONFIG_FILE
