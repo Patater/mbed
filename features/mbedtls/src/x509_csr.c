@@ -38,6 +38,7 @@
 #if defined(MBEDTLS_X509_CSR_PARSE_C)
 
 #include "mbedtls/x509_csr.h"
+#include "mbedtls/x509_internal.h"
 #include "mbedtls/oid.h"
 #include "mbedtls/platform_util.h"
 
@@ -95,7 +96,7 @@ int mbedtls_x509_csr_parse_der( mbedtls_x509_csr *csr,
     unsigned char *p, *end;
     mbedtls_x509_buf sig_params;
 
-    memset( &sig_params, 0, sizeof( mbedtls_x509_buf ) );
+    mbedtls_platform_memset( &sig_params, 0, sizeof( mbedtls_x509_buf ) );
 
     /*
      * Check for valid input
@@ -113,7 +114,7 @@ int mbedtls_x509_csr_parse_der( mbedtls_x509_csr *csr,
     if( p == NULL )
         return( MBEDTLS_ERR_X509_ALLOC_FAILED );
 
-    memcpy( p, buf, buflen );
+    mbedtls_platform_memcpy( p, buf, buflen );
 
     csr->raw.p = p;
     csr->raw.len = len;
@@ -183,14 +184,16 @@ int mbedtls_x509_csr_parse_der( mbedtls_x509_csr *csr,
         mbedtls_x509_csr_free( csr );
         return( MBEDTLS_ERR_X509_INVALID_FORMAT + ret );
     }
+    p += len;
+    csr->subject_raw.len = p - csr->subject_raw.p;
 
-    if( ( ret = mbedtls_x509_get_name( &p, p + len, &csr->subject ) ) != 0 )
+    if( ( ret = mbedtls_x509_get_name( csr->subject_raw.p,
+                                       csr->subject_raw.len,
+                                       &csr->subject ) ) != 0 )
     {
         mbedtls_x509_csr_free( csr );
         return( ret );
     }
-
-    csr->subject_raw.len = p - csr->subject_raw.p;
 
     /*
      *  subjectPKInfo SubjectPublicKeyInfo
@@ -328,8 +331,9 @@ int mbedtls_x509_csr_parse_file( mbedtls_x509_csr *csr, const char *path )
 }
 #endif /* MBEDTLS_FS_IO */
 
-#define BEFORE_COLON    14
-#define BC              "14"
+#if !defined(MBEDTLS_X509_REMOVE_INFO)
+#define BEFORE_COLON_CSR    14
+#define BC_CSR              "14"
 /*
  * Return an informational string about the CSR.
  */
@@ -339,7 +343,7 @@ int mbedtls_x509_csr_info( char *buf, size_t size, const char *prefix,
     int ret;
     size_t n;
     char *p;
-    char key_size_str[BEFORE_COLON];
+    char key_size_str[BEFORE_COLON_CSR];
 
     p = buf;
     n = size;
@@ -356,29 +360,30 @@ int mbedtls_x509_csr_info( char *buf, size_t size, const char *prefix,
     ret = mbedtls_snprintf( p, n, "\n%ssigned using  : ", prefix );
     MBEDTLS_X509_SAFE_SNPRINTF;
 
-    ret = mbedtls_x509_sig_alg_gets( p, n, &csr->sig_oid, csr->sig_pk, csr->sig_md,
-                             csr->sig_opts );
+    ret = mbedtls_x509_sig_alg_gets( p, n, csr->sig_pk,
+                                     csr->sig_md, csr->sig_opts );
     MBEDTLS_X509_SAFE_SNPRINTF;
 
-    if( ( ret = mbedtls_x509_key_size_helper( key_size_str, BEFORE_COLON,
+    if( ( ret = mbedtls_x509_key_size_helper( key_size_str, BEFORE_COLON_CSR,
                                       mbedtls_pk_get_name( &csr->pk ) ) ) != 0 )
     {
         return( ret );
     }
 
-    ret = mbedtls_snprintf( p, n, "\n%s%-" BC "s: %d bits\n", prefix, key_size_str,
+    ret = mbedtls_snprintf( p, n, "\n%s%-" BC_CSR "s: %d bits\n", prefix, key_size_str,
                           (int) mbedtls_pk_get_bitlen( &csr->pk ) );
     MBEDTLS_X509_SAFE_SNPRINTF;
 
     return( (int) ( size - n ) );
 }
+#endif /* !MBEDTLS_X509_REMOVE_INFO */
 
 /*
  * Initialize a CSR
  */
 void mbedtls_x509_csr_init( mbedtls_x509_csr *csr )
 {
-    memset( csr, 0, sizeof(mbedtls_x509_csr) );
+    mbedtls_platform_memset( csr, 0, sizeof(mbedtls_x509_csr) );
 }
 
 /*

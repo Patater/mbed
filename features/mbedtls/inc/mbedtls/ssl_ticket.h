@@ -25,7 +25,7 @@
 #define MBEDTLS_SSL_TICKET_H
 
 #if !defined(MBEDTLS_CONFIG_FILE)
-#include "mbedtls/config.h"
+#include "config.h"
 #else
 #include MBEDTLS_CONFIG_FILE
 #endif
@@ -36,11 +36,11 @@
  * secrecy, when MBEDTLS_HAVE_TIME is defined.
  */
 
-#include "mbedtls/ssl.h"
-#include "mbedtls/cipher.h"
+#include "ssl.h"
+#include "cipher.h"
 
 #if defined(MBEDTLS_THREADING_C)
-#include "mbedtls/threading.h"
+#include "threading.h"
 #endif
 
 #ifdef __cplusplus
@@ -63,14 +63,14 @@ mbedtls_ssl_ticket_key;
  */
 typedef struct mbedtls_ssl_ticket_context
 {
-    mbedtls_ssl_ticket_key keys[2]; /*!< ticket protection keys             */
     unsigned char active;           /*!< index of the currently active key  */
-
     uint32_t ticket_lifetime;       /*!< lifetime of tickets in seconds     */
 
     /** Callback for getting (pseudo-)random numbers                        */
     int  (*f_rng)(void *, unsigned char *, size_t);
     void *p_rng;                    /*!< context for the RNG function       */
+
+    mbedtls_ssl_ticket_key keys[2]; /*!< ticket protection keys             */
 
 #if defined(MBEDTLS_THREADING_C)
     mbedtls_threading_mutex_t mutex;

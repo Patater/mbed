@@ -43,10 +43,11 @@
 #include "mbedtls/ssl_internal.h"
 
 #include <string.h>
+#include "mbedtls/platform_util.h"
 
 void mbedtls_ssl_cache_init( mbedtls_ssl_cache_context *cache )
 {
-    memset( cache, 0, sizeof( mbedtls_ssl_cache_context ) );
+    mbedtls_platform_memset( cache, 0, sizeof( mbedtls_ssl_cache_context ) );
 
     cache->timeout = MBEDTLS_SSL_CACHE_DEFAULT_TIMEOUT;
     cache->max_entries = MBEDTLS_SSL_CACHE_DEFAULT_MAX_ENTRIES;
@@ -84,12 +85,16 @@ int mbedtls_ssl_cache_get( void *data, mbedtls_ssl_session *session )
             continue;
 #endif
 
-        if( session->ciphersuite != entry->session.ciphersuite ||
-            session->compression != entry->session.compression ||
+        if( mbedtls_ssl_session_get_ciphersuite( session ) !=
+            mbedtls_ssl_session_get_ciphersuite( &entry->session ) ||
+            mbedtls_ssl_session_get_compression( session ) !=
+            mbedtls_ssl_session_get_compression( &entry->session ) ||
             session->id_len != entry->session.id_len )
+        {
             continue;
+        }
 
-        if( memcmp( session->id, entry->session.id,
+        if( mbedtls_platform_memcmp( session->id, entry->session.id,
                     entry->session.id_len ) != 0 )
             continue;
 
@@ -175,7 +180,7 @@ int mbedtls_ssl_cache_set( void *data, const mbedtls_ssl_session *session )
         }
 #endif
 
-        if( memcmp( session->id, cur->session.id, cur->session.id_len ) == 0 )
+        if( mbedtls_platform_memcmp( session->id, cur->session.id, cur->session.id_len ) == 0 )
             break; /* client reconnected, keep timestamp for session id */
 
 #if defined(MBEDTLS_HAVE_TIME)
@@ -256,7 +261,7 @@ int mbedtls_ssl_cache_set( void *data, const mbedtls_ssl_session *session )
     if( cur->peer_cert.p != NULL )
     {
         mbedtls_free( cur->peer_cert.p );
-        memset( &cur->peer_cert, 0, sizeof(mbedtls_x509_buf) );
+        mbedtls_platform_memset( &cur->peer_cert, 0, sizeof(mbedtls_x509_buf) );
     }
 #endif /* MBEDTLS_X509_CRT_PARSE_C && MBEDTLS_SSL_KEEP_PEER_CERTIFICATE */
 
@@ -285,7 +290,7 @@ int mbedtls_ssl_cache_set( void *data, const mbedtls_ssl_session *session )
             goto exit;
         }
 
-        memcpy( cur->peer_cert.p,
+        mbedtls_platform_memcpy( cur->peer_cert.p,
                 cur->session.peer_cert->raw.p,
                 cur->session.peer_cert->raw.len );
         cur->peer_cert.len = session->peer_cert->raw.len;

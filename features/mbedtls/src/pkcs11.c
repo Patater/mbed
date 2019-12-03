@@ -40,10 +40,11 @@
 #endif
 
 #include <string.h>
+#include "mbedtls/platform_util.h"
 
 void mbedtls_pkcs11_init( mbedtls_pkcs11_context *ctx )
 {
-    memset( ctx, 0, sizeof( mbedtls_pkcs11_context ) );
+    mbedtls_platform_memset( ctx, 0, sizeof( mbedtls_pkcs11_context ) );
 }
 
 int mbedtls_pkcs11_x509_cert_bind( mbedtls_x509_crt *cert, pkcs11h_certificate_t pkcs11_cert )
@@ -183,8 +184,8 @@ int mbedtls_pkcs11_sign( mbedtls_pkcs11_context *ctx,
 
     if( md_alg != MBEDTLS_MD_NONE )
     {
-        const mbedtls_md_info_t *md_info = mbedtls_md_info_from_type( md_alg );
-        if( md_info == NULL )
+        mbedtls_md_handle_t md_info = mbedtls_md_info_from_type( md_alg );
+        if( md_info == MBEDTLS_MD_INVALID_HANDLE )
             return( MBEDTLS_ERR_RSA_BAD_INPUT_DATA );
 
         if( mbedtls_oid_get_oid_by_md( md_alg, &oid, &oid_size ) != 0 )
@@ -218,7 +219,7 @@ int mbedtls_pkcs11_sign( mbedtls_pkcs11_context *ctx,
         *p++ = (unsigned char) ( 0x04 + oid_size );
         *p++ = MBEDTLS_ASN1_OID;
         *p++ = oid_size & 0xFF;
-        memcpy( p, oid, oid_size );
+        mbedtls_platform_memcpy( p, oid, oid_size );
         p += oid_size;
         *p++ = MBEDTLS_ASN1_NULL;
         *p++ = 0x00;
@@ -226,7 +227,7 @@ int mbedtls_pkcs11_sign( mbedtls_pkcs11_context *ctx,
         *p++ = hashlen;
     }
 
-    memcpy( p, hash, hashlen );
+    mbedtls_platform_memcpy( p, hash, hashlen );
 
     if( pkcs11h_certificate_signAny( ctx->pkcs11h_cert, CKM_RSA_PKCS, sig,
             asn_len + hashlen, sig, &sig_len ) != CKR_OK )

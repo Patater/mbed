@@ -39,10 +39,6 @@
 #include "mbedtls/ssl.h"
 #include "mbedtls/ssl_internal.h"
 
-#if defined(MBEDTLS_USE_PSA_CRYPTO)
-#include "mbedtls/psa_util.h"
-#endif /* MBEDTLS_USE_PSA_CRYPTO */
-
 #include <string.h>
 
 #include <stdint.h>
@@ -55,45 +51,7 @@
 #include "mbedtls/platform_util.h"
 #endif
 
-#if defined(MBEDTLS_KEY_EXCHANGE__SOME__PSK_ENABLED)
-static int ssl_conf_has_static_psk( mbedtls_ssl_config const *conf )
-{
-    if( conf->psk_identity     == NULL ||
-        conf->psk_identity_len == 0     )
-    {
-        return( 0 );
-    }
-
-    if( conf->psk != NULL && conf->psk_len != 0 )
-        return( 1 );
-
-#if defined(MBEDTLS_USE_PSA_CRYPTO)
-    if( conf->psk_opaque != 0 )
-        return( 1 );
-#endif /* MBEDTLS_USE_PSA_CRYPTO */
-
-    return( 0 );
-}
-
-#if defined(MBEDTLS_USE_PSA_CRYPTO)
-static int ssl_conf_has_static_raw_psk( mbedtls_ssl_config const *conf )
-{
-    if( conf->psk_identity     == NULL ||
-        conf->psk_identity_len == 0     )
-    {
-        return( 0 );
-    }
-
-    if( conf->psk != NULL && conf->psk_len != 0 )
-        return( 1 );
-
-    return( 0 );
-}
-#endif /* MBEDTLS_USE_PSA_CRYPTO */
-
-#endif /* MBEDTLS_KEY_EXCHANGE__SOME__PSK_ENABLED */
-
-#if defined(MBEDTLS_SSL_SERVER_NAME_INDICATION)
+#if defined(MBEDTLS_SSL_SERVER_NAME_INDICATION) && !defined(MBEDTLS_X509_REMOVE_HOSTNAME_VERIFICATION)
 static void ssl_write_hostname_ext( mbedtls_ssl_context *ssl,
                                     unsigned char *buf,
                                     size_t *olen )
@@ -144,24 +102,20 @@ static void ssl_write_hostname_ext( mbedtls_ssl_context *ssl,
      * } ServerNameList;
      *
      */
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_SERVERNAME >> 8 ) & 0xFF );
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_SERVERNAME      ) & 0xFF );
 
-    *p++ = (unsigned char)( ( (hostname_len + 5) >> 8 ) & 0xFF );
-    *p++ = (unsigned char)( ( (hostname_len + 5)      ) & 0xFF );
-
-    *p++ = (unsigned char)( ( (hostname_len + 3) >> 8 ) & 0xFF );
-    *p++ = (unsigned char)( ( (hostname_len + 3)      ) & 0xFF );
+    p = mbedtls_platform_put_uint16_be( p, MBEDTLS_TLS_EXT_SERVERNAME );
+    p = mbedtls_platform_put_uint16_be( p, hostname_len + 5 );
+    p = mbedtls_platform_put_uint16_be( p, hostname_len + 3 );
 
     *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_SERVERNAME_HOSTNAME ) & 0xFF );
-    *p++ = (unsigned char)( ( hostname_len >> 8 ) & 0xFF );
-    *p++ = (unsigned char)( ( hostname_len      ) & 0xFF );
 
-    memcpy( p, ssl->hostname, hostname_len );
+    p = mbedtls_platform_put_uint16_be( p, hostname_len );
+
+    mbedtls_platform_memcpy( p, ssl->hostname, hostname_len );
 
     *olen = hostname_len + 9;
 }
-#endif /* MBEDTLS_SSL_SERVER_NAME_INDICATION */
+#endif /* MBEDTLS_SSL_SERVER_NAME_INDICATION && !MBEDTLS_X509_REMOVE_HOSTNAME_VERIFICATION */
 
 #if defined(MBEDTLS_SSL_RENEGOTIATION)
 static void ssl_write_renegotiation_ext( mbedtls_ssl_context *ssl,
@@ -190,14 +144,13 @@ static void ssl_write_renegotiation_ext( mbedtls_ssl_context *ssl,
     /*
      * Secure renegotiation
      */
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_RENEGOTIATION_INFO >> 8 ) & 0xFF );
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_RENEGOTIATION_INFO      ) & 0xFF );
+    p = mbedtls_platform_put_uint16_be( p, MBEDTLS_TLS_EXT_RENEGOTIATION_INFO );
 
     *p++ = 0x00;
     *p++ = ( ssl->verify_data_len + 1 ) & 0xFF;
     *p++ = ssl->verify_data_len & 0xFF;
 
-    memcpy( p, ssl->own_verify_data, ssl->verify_data_len );
+    mbedtls_platform_memcpy( p, ssl->own_verify_data, ssl->verify_data_len );
 
     *olen = 5 + ssl->verify_data_len;
 }
@@ -215,27 +168,30 @@ static void ssl_write_signature_algorithms_ext( mbedtls_ssl_context *ssl,
     unsigned char *p = buf;
     const unsigned char *end = ssl->out_msg + MBEDTLS_SSL_OUT_CONTENT_LEN;
     size_t sig_alg_len = 0;
-    const int *md;
-#if defined(MBEDTLS_RSA_C) || defined(MBEDTLS_ECDSA_C)
+#if defined(MBEDTLS_RSA_C) || defined(MBEDTLS_ECDSA_C) || \
+    defined(MBEDTLS_USE_TINYCRYPT)
     unsigned char *sig_alg_list = buf + 6;
 #endif
 
     *olen = 0;
 
-    if( ssl->conf->max_minor_ver != MBEDTLS_SSL_MINOR_VERSION_3 )
+    if( mbedtls_ssl_conf_get_max_minor_ver( ssl->conf ) !=
+        MBEDTLS_SSL_MINOR_VERSION_3 )
+    {
         return;
+    }
 
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "client hello, adding signature_algorithms extension" ) );
 
-    for( md = ssl->conf->sig_hashes; *md != MBEDTLS_MD_NONE; md++ )
-    {
-#if defined(MBEDTLS_ECDSA_C)
-        sig_alg_len += 2;
+    MBEDTLS_SSL_BEGIN_FOR_EACH_SIG_HASH_TLS( hash )
+    ((void) hash);
+#if defined(MBEDTLS_ECDSA_C) || defined(MBEDTLS_USE_TINYCRYPT)
+    sig_alg_len += 2;
 #endif
 #if defined(MBEDTLS_RSA_C)
-        sig_alg_len += 2;
+    sig_alg_len += 2;
 #endif
-    }
+    MBEDTLS_SSL_END_FOR_EACH_SIG_HASH_TLS
 
     if( end < p || (size_t)( end - p ) < sig_alg_len + 6 )
     {
@@ -248,17 +204,16 @@ static void ssl_write_signature_algorithms_ext( mbedtls_ssl_context *ssl,
      */
     sig_alg_len = 0;
 
-    for( md = ssl->conf->sig_hashes; *md != MBEDTLS_MD_NONE; md++ )
-    {
-#if defined(MBEDTLS_ECDSA_C)
-        sig_alg_list[sig_alg_len++] = mbedtls_ssl_hash_from_md_alg( *md );
-        sig_alg_list[sig_alg_len++] = MBEDTLS_SSL_SIG_ECDSA;
+    MBEDTLS_SSL_BEGIN_FOR_EACH_SIG_HASH_TLS( hash )
+#if defined(MBEDTLS_ECDSA_C) || defined(MBEDTLS_USE_TINYCRYPT)
+    sig_alg_list[sig_alg_len++] = hash;
+    sig_alg_list[sig_alg_len++] = MBEDTLS_SSL_SIG_ECDSA;
 #endif
 #if defined(MBEDTLS_RSA_C)
-        sig_alg_list[sig_alg_len++] = mbedtls_ssl_hash_from_md_alg( *md );
-        sig_alg_list[sig_alg_len++] = MBEDTLS_SSL_SIG_RSA;
+    sig_alg_list[sig_alg_len++] = hash;
+    sig_alg_list[sig_alg_len++] = MBEDTLS_SSL_SIG_RSA;
 #endif
-    }
+    MBEDTLS_SSL_END_FOR_EACH_SIG_HASH_TLS
 
     /*
      * enum {
@@ -277,58 +232,47 @@ static void ssl_write_signature_algorithms_ext( mbedtls_ssl_context *ssl,
      * SignatureAndHashAlgorithm
      *   supported_signature_algorithms<2..2^16-2>;
      */
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_SIG_ALG >> 8 ) & 0xFF );
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_SIG_ALG      ) & 0xFF );
 
-    *p++ = (unsigned char)( ( ( sig_alg_len + 2 ) >> 8 ) & 0xFF );
-    *p++ = (unsigned char)( ( ( sig_alg_len + 2 )      ) & 0xFF );
-
-    *p++ = (unsigned char)( ( sig_alg_len >> 8 ) & 0xFF );
-    *p++ = (unsigned char)( ( sig_alg_len      ) & 0xFF );
-
+    p = mbedtls_platform_put_uint16_be( p, MBEDTLS_TLS_EXT_SIG_ALG );
+    p = mbedtls_platform_put_uint16_be( p, ( sig_alg_len + 2 ) );
+    p = mbedtls_platform_put_uint16_be( p, sig_alg_len );
     *olen = 6 + sig_alg_len;
 }
 #endif /* MBEDTLS_SSL_PROTO_TLS1_2 &&
           MBEDTLS_KEY_EXCHANGE__WITH_CERT__ENABLED */
 
-#if defined(MBEDTLS_ECDH_C) || defined(MBEDTLS_ECDSA_C) || \
+#if defined(MBEDTLS_ECDH_C)   ||                           \
+    defined(MBEDTLS_ECDSA_C)  ||                           \
+    defined(MBEDTLS_USE_TINYCRYPT) ||                           \
     defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED)
+static size_t ssl_get_ec_curve_list_length( mbedtls_ssl_context *ssl )
+{
+    size_t ec_list_len = 0;
+
+    MBEDTLS_SSL_BEGIN_FOR_EACH_SUPPORTED_EC_TLS_ID( tls_id )
+    ((void) tls_id);
+    ec_list_len++;
+    MBEDTLS_SSL_END_FOR_EACH_SUPPORTED_EC_TLS_ID
+
+    return( ec_list_len );
+}
+
 static void ssl_write_supported_elliptic_curves_ext( mbedtls_ssl_context *ssl,
                                                      unsigned char *buf,
                                                      size_t *olen )
 {
     unsigned char *p = buf;
     const unsigned char *end = ssl->out_msg + MBEDTLS_SSL_OUT_CONTENT_LEN;
-    unsigned char *elliptic_curve_list = p + 6;
     size_t elliptic_curve_len = 0;
-    const mbedtls_ecp_curve_info *info;
-#if defined(MBEDTLS_ECP_C)
-    const mbedtls_ecp_group_id *grp_id;
-#else
-    ((void) ssl);
-#endif
 
     *olen = 0;
 
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "client hello, adding supported_elliptic_curves extension" ) );
 
-#if defined(MBEDTLS_ECP_C)
-    for( grp_id = ssl->conf->curve_list; *grp_id != MBEDTLS_ECP_DP_NONE; grp_id++ )
-#else
-    for( info = mbedtls_ecp_curve_list(); info->grp_id != MBEDTLS_ECP_DP_NONE; info++ )
-#endif
-    {
-#if defined(MBEDTLS_ECP_C)
-        info = mbedtls_ecp_curve_info_from_grp_id( *grp_id );
-#endif
-        if( info == NULL )
-        {
-            MBEDTLS_SSL_DEBUG_MSG( 1, ( "invalid curve in ssl configuration" ) );
-            return;
-        }
-
-        elliptic_curve_len += 2;
-    }
+    /* Each elliptic curve is encoded in 2 bytes. */
+    elliptic_curve_len = 2 * ssl_get_ec_curve_list_length( ssl );
+    if( elliptic_curve_len == 0 )
+        return;
 
     if( end < p || (size_t)( end - p ) < 6 + elliptic_curve_len )
     {
@@ -336,32 +280,14 @@ static void ssl_write_supported_elliptic_curves_ext( mbedtls_ssl_context *ssl,
         return;
     }
 
-    elliptic_curve_len = 0;
+    p = mbedtls_platform_put_uint16_be( p, MBEDTLS_TLS_EXT_SUPPORTED_ELLIPTIC_CURVES );
+    p = mbedtls_platform_put_uint16_be( p, elliptic_curve_len + 2 );
+    p = mbedtls_platform_put_uint16_be( p, elliptic_curve_len );
 
-#if defined(MBEDTLS_ECP_C)
-    for( grp_id = ssl->conf->curve_list; *grp_id != MBEDTLS_ECP_DP_NONE; grp_id++ )
-#else
-    for( info = mbedtls_ecp_curve_list(); info->grp_id != MBEDTLS_ECP_DP_NONE; info++ )
-#endif
-    {
-#if defined(MBEDTLS_ECP_C)
-        info = mbedtls_ecp_curve_info_from_grp_id( *grp_id );
-#endif
-        elliptic_curve_list[elliptic_curve_len++] = info->tls_id >> 8;
-        elliptic_curve_list[elliptic_curve_len++] = info->tls_id & 0xFF;
-    }
+    MBEDTLS_SSL_BEGIN_FOR_EACH_SUPPORTED_EC_TLS_ID( tls_id )
+    p = mbedtls_platform_put_uint16_be( p, tls_id );
 
-    if( elliptic_curve_len == 0 )
-        return;
-
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_SUPPORTED_ELLIPTIC_CURVES >> 8 ) & 0xFF );
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_SUPPORTED_ELLIPTIC_CURVES      ) & 0xFF );
-
-    *p++ = (unsigned char)( ( ( elliptic_curve_len + 2 ) >> 8 ) & 0xFF );
-    *p++ = (unsigned char)( ( ( elliptic_curve_len + 2 )      ) & 0xFF );
-
-    *p++ = (unsigned char)( ( ( elliptic_curve_len     ) >> 8 ) & 0xFF );
-    *p++ = (unsigned char)( ( ( elliptic_curve_len     )      ) & 0xFF );
+    MBEDTLS_SSL_END_FOR_EACH_SUPPORTED_EC_TLS_ID
 
     *olen = 6 + elliptic_curve_len;
 }
@@ -383,18 +309,17 @@ static void ssl_write_supported_point_formats_ext( mbedtls_ssl_context *ssl,
         return;
     }
 
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_SUPPORTED_POINT_FORMATS >> 8 ) & 0xFF );
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_SUPPORTED_POINT_FORMATS      ) & 0xFF );
+    p = mbedtls_platform_put_uint16_be( p, MBEDTLS_TLS_EXT_SUPPORTED_POINT_FORMATS );
 
     *p++ = 0x00;
     *p++ = 2;
 
     *p++ = 1;
-    *p++ = MBEDTLS_ECP_PF_UNCOMPRESSED;
+    *p++ = MBEDTLS_SSL_EC_PF_UNCOMPRESSED;
 
     *olen = 6;
 }
-#endif /* MBEDTLS_ECDH_C || MBEDTLS_ECDSA_C ||
+#endif /* MBEDTLS_ECDH_C || MBEDTLS_ECDSA_C || MBEDTLS_USE_TINYCRYPT ||
           MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED */
 
 #if defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED)
@@ -421,8 +346,7 @@ static void ssl_write_ecjpake_kkpp_ext( mbedtls_ssl_context *ssl,
         return;
     }
 
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_ECJPAKE_KKPP >> 8 ) & 0xFF );
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_ECJPAKE_KKPP      ) & 0xFF );
+    p = mbedtls_platform_put_uint16_be( p, MBEDTLS_TLS_EXT_ECJPAKE_KKPP );
 
     /*
      * We may need to send ClientHello multiple times for Hello verification.
@@ -436,7 +360,8 @@ static void ssl_write_ecjpake_kkpp_ext( mbedtls_ssl_context *ssl,
 
         ret = mbedtls_ecjpake_write_round_one( &ssl->handshake->ecjpake_ctx,
                                         p + 2, end - p - 2, &kkpp_len,
-                                        ssl->conf->f_rng, ssl->conf->p_rng );
+                                        mbedtls_ssl_conf_get_frng( ssl->conf ),
+                                        mbedtls_ssl_conf_get_prng( ssl->conf ) );
         if( ret != 0 )
         {
             MBEDTLS_SSL_DEBUG_RET( 1 , "mbedtls_ecjpake_write_round_one", ret );
@@ -450,7 +375,7 @@ static void ssl_write_ecjpake_kkpp_ext( mbedtls_ssl_context *ssl,
             return;
         }
 
-        memcpy( ssl->handshake->ecjpake_cache, p + 2, kkpp_len );
+        mbedtls_platform_memcpy( ssl->handshake->ecjpake_cache, p + 2, kkpp_len );
         ssl->handshake->ecjpake_cache_len = kkpp_len;
     }
     else
@@ -465,11 +390,10 @@ static void ssl_write_ecjpake_kkpp_ext( mbedtls_ssl_context *ssl,
             return;
         }
 
-        memcpy( p + 2, ssl->handshake->ecjpake_cache, kkpp_len );
+        mbedtls_platform_memcpy( p + 2, ssl->handshake->ecjpake_cache, kkpp_len );
     }
 
-    *p++ = (unsigned char)( ( kkpp_len >> 8 ) & 0xFF );
-    *p++ = (unsigned char)( ( kkpp_len      ) & 0xFF );
+    p = mbedtls_platform_put_uint16_be( p, kkpp_len );
 
     *olen = kkpp_len + 4;
 }
@@ -494,7 +418,7 @@ static void ssl_write_cid_ext( mbedtls_ssl_context *ssl,
     */
 
     *olen = 0;
-    if( ssl->conf->transport != MBEDTLS_SSL_TRANSPORT_DATAGRAM ||
+    if( MBEDTLS_SSL_TRANSPORT_IS_TLS( ssl->conf->transport ) ||
         ssl->negotiate_cid == MBEDTLS_SSL_CID_DISABLED )
     {
         return;
@@ -510,13 +434,13 @@ static void ssl_write_cid_ext( mbedtls_ssl_context *ssl,
     }
 
     /* Add extension ID + size */
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_CID >> 8 ) & 0xFF );
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_CID      ) & 0xFF );
+    p = mbedtls_platform_put_uint16_be( p, MBEDTLS_TLS_EXT_CID );
     ext_len = (size_t) ssl->own_cid_len + 1;
-    *p++ = (unsigned char)( ( ext_len >> 8 ) & 0xFF );
-    *p++ = (unsigned char)( ( ext_len      ) & 0xFF );
+
+    p = mbedtls_platform_put_uint16_be( p, ext_len );
 
     *p++ = (uint8_t) ssl->own_cid_len;
+    /* Not using more secure mbedtls_platform_memcpy as cid is public */
     memcpy( p, ssl->own_cid, ssl->own_cid_len );
 
     *olen = ssl->own_cid_len + 5;
@@ -545,8 +469,7 @@ static void ssl_write_max_fragment_length_ext( mbedtls_ssl_context *ssl,
         return;
     }
 
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_MAX_FRAGMENT_LENGTH >> 8 ) & 0xFF );
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_MAX_FRAGMENT_LENGTH      ) & 0xFF );
+    p = mbedtls_platform_put_uint16_be( p, MBEDTLS_TLS_EXT_MAX_FRAGMENT_LENGTH );
 
     *p++ = 0x00;
     *p++ = 1;
@@ -579,8 +502,7 @@ static void ssl_write_truncated_hmac_ext( mbedtls_ssl_context *ssl,
         return;
     }
 
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_TRUNCATED_HMAC >> 8 ) & 0xFF );
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_TRUNCATED_HMAC      ) & 0xFF );
+    p = mbedtls_platform_put_uint16_be( p, MBEDTLS_TLS_EXT_TRUNCATED_HMAC );
 
     *p++ = 0x00;
     *p++ = 0x00;
@@ -599,7 +521,8 @@ static void ssl_write_encrypt_then_mac_ext( mbedtls_ssl_context *ssl,
     *olen = 0;
 
     if( ssl->conf->encrypt_then_mac == MBEDTLS_SSL_ETM_DISABLED ||
-        ssl->conf->max_minor_ver == MBEDTLS_SSL_MINOR_VERSION_0 )
+        mbedtls_ssl_conf_get_max_minor_ver( ssl->conf ) ==
+          MBEDTLS_SSL_MINOR_VERSION_0 )
     {
         return;
     }
@@ -613,8 +536,7 @@ static void ssl_write_encrypt_then_mac_ext( mbedtls_ssl_context *ssl,
         return;
     }
 
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_ENCRYPT_THEN_MAC >> 8 ) & 0xFF );
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_ENCRYPT_THEN_MAC      ) & 0xFF );
+    p = mbedtls_platform_put_uint16_be( p, MBEDTLS_TLS_EXT_ENCRYPT_THEN_MAC );
 
     *p++ = 0x00;
     *p++ = 0x00;
@@ -632,8 +554,10 @@ static void ssl_write_extended_ms_ext( mbedtls_ssl_context *ssl,
 
     *olen = 0;
 
-    if( ssl->conf->extended_ms == MBEDTLS_SSL_EXTENDED_MS_DISABLED ||
-        ssl->conf->max_minor_ver == MBEDTLS_SSL_MINOR_VERSION_0 )
+    if( mbedtls_ssl_conf_get_ems( ssl->conf ) ==
+          MBEDTLS_SSL_EXTENDED_MS_DISABLED ||
+        mbedtls_ssl_conf_get_max_minor_ver( ssl->conf ) ==
+          MBEDTLS_SSL_MINOR_VERSION_0 )
     {
         return;
     }
@@ -647,8 +571,7 @@ static void ssl_write_extended_ms_ext( mbedtls_ssl_context *ssl,
         return;
     }
 
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_EXTENDED_MASTER_SECRET >> 8 ) & 0xFF );
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_EXTENDED_MASTER_SECRET      ) & 0xFF );
+    p = mbedtls_platform_put_uint16_be( p, MBEDTLS_TLS_EXT_EXTENDED_MASTER_SECRET );
 
     *p++ = 0x00;
     *p++ = 0x00;
@@ -680,11 +603,8 @@ static void ssl_write_session_ticket_ext( mbedtls_ssl_context *ssl,
         return;
     }
 
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_SESSION_TICKET >> 8 ) & 0xFF );
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_SESSION_TICKET      ) & 0xFF );
-
-    *p++ = (unsigned char)( ( tlen >> 8 ) & 0xFF );
-    *p++ = (unsigned char)( ( tlen      ) & 0xFF );
+    p = mbedtls_platform_put_uint16_be( p, MBEDTLS_TLS_EXT_SESSION_TICKET );
+    p = mbedtls_platform_put_uint16_be( p, tlen );
 
     *olen = 4;
 
@@ -695,7 +615,7 @@ static void ssl_write_session_ticket_ext( mbedtls_ssl_context *ssl,
 
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "sending session ticket of length %d", tlen ) );
 
-    memcpy( p, ssl->session_negotiate->ticket, tlen );
+    mbedtls_platform_memcpy( p, ssl->session_negotiate->ticket, tlen );
 
     *olen += tlen;
 }
@@ -728,8 +648,7 @@ static void ssl_write_alpn_ext( mbedtls_ssl_context *ssl,
         return;
     }
 
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_ALPN >> 8 ) & 0xFF );
-    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_ALPN      ) & 0xFF );
+    p = mbedtls_platform_put_uint16_be( p, MBEDTLS_TLS_EXT_ALPN );
 
     /*
      * opaque ProtocolName<1..2^8-1>;
@@ -745,19 +664,16 @@ static void ssl_write_alpn_ext( mbedtls_ssl_context *ssl,
     for( cur = ssl->conf->alpn_list; *cur != NULL; cur++ )
     {
         *p = (unsigned char)( strlen( *cur ) & 0xFF );
-        memcpy( p + 1, *cur, *p );
+        mbedtls_platform_memcpy( p + 1, *cur, *p );
         p += 1 + *p;
     }
 
     *olen = p - buf;
 
     /* List length = olen - 2 (ext_type) - 2 (ext_len) - 2 (list_len) */
-    buf[4] = (unsigned char)( ( ( *olen - 6 ) >> 8 ) & 0xFF );
-    buf[5] = (unsigned char)( ( ( *olen - 6 )      ) & 0xFF );
-
+    (void)mbedtls_platform_put_uint16_be( &buf[4], ( *olen - 6 ) );
     /* Extension length = olen - 2 (ext_type) - 2 (ext_len) */
-    buf[2] = (unsigned char)( ( ( *olen - 4 ) >> 8 ) & 0xFF );
-    buf[3] = (unsigned char)( ( ( *olen - 4 )      ) & 0xFF );
+    (void)mbedtls_platform_put_uint16_be( &buf[2], ( *olen - 4 ) );
 }
 #endif /* MBEDTLS_SSL_ALPN */
 
@@ -776,7 +692,7 @@ static int ssl_generate_random( mbedtls_ssl_context *ssl )
      * When responding to a verify request, MUST reuse random (RFC 6347 4.2.1)
      */
 #if defined(MBEDTLS_SSL_PROTO_DTLS)
-    if( ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_DATAGRAM &&
+    if( MBEDTLS_SSL_TRANSPORT_IS_DTLS( ssl->conf->transport ) &&
         ssl->handshake->verify_cookie != NULL )
     {
         return( 0 );
@@ -785,21 +701,23 @@ static int ssl_generate_random( mbedtls_ssl_context *ssl )
 
 #if defined(MBEDTLS_HAVE_TIME)
     t = mbedtls_time( NULL );
-    *p++ = (unsigned char)( t >> 24 );
-    *p++ = (unsigned char)( t >> 16 );
-    *p++ = (unsigned char)( t >>  8 );
-    *p++ = (unsigned char)( t       );
-
+    p = mbedtls_platform_put_uint32_be( p, (uint32_t) t );
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "client hello, current time: %lu", t ) );
 #else
-    if( ( ret = ssl->conf->f_rng( ssl->conf->p_rng, p, 4 ) ) != 0 )
+    if( ( ret = mbedtls_ssl_conf_get_frng( ssl->conf )
+          ( mbedtls_ssl_conf_get_prng( ssl->conf ), p, 4 ) ) != 0 )
+    {
         return( ret );
+    }
 
     p += 4;
 #endif /* MBEDTLS_HAVE_TIME */
 
-    if( ( ret = ssl->conf->f_rng( ssl->conf->p_rng, p, 28 ) ) != 0 )
+    if( ( ret = mbedtls_ssl_conf_get_frng( ssl->conf )
+          ( mbedtls_ssl_conf_get_prng( ssl->conf ), p, 28 ) ) != 0 )
+    {
         return( ret );
+    }
 
     return( 0 );
 }
@@ -814,44 +732,47 @@ static int ssl_generate_random( mbedtls_ssl_context *ssl )
  *
  * \return          0 if valid, else 1
  */
-static int ssl_validate_ciphersuite( const mbedtls_ssl_ciphersuite_t * suite_info,
+static int ssl_validate_ciphersuite( mbedtls_ssl_ciphersuite_handle_t suite_info,
                                      const mbedtls_ssl_context * ssl,
                                      int min_minor_ver, int max_minor_ver )
 {
     (void) ssl;
-    if( suite_info == NULL )
+    if( suite_info == MBEDTLS_SSL_CIPHERSUITE_INVALID_HANDLE )
         return( 1 );
 
-    if( suite_info->min_minor_ver > max_minor_ver ||
-            suite_info->max_minor_ver < min_minor_ver )
+    if( mbedtls_ssl_ver_gt( mbedtls_ssl_suite_get_min_minor_ver( suite_info ),
+                            max_minor_ver ) ||
+        mbedtls_ssl_ver_lt( mbedtls_ssl_suite_get_max_minor_ver( suite_info ),
+                            min_minor_ver ) )
+    {
         return( 1 );
+    }
 
 #if defined(MBEDTLS_SSL_PROTO_DTLS)
-    if( ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_DATAGRAM &&
-            ( suite_info->flags & MBEDTLS_CIPHERSUITE_NODTLS ) )
+    if( MBEDTLS_SSL_TRANSPORT_IS_DTLS( ssl->conf->transport ) &&
+        ( mbedtls_ssl_suite_get_flags( suite_info ) &
+          MBEDTLS_CIPHERSUITE_NODTLS ) != 0 )
+    {
         return( 1 );
+    }
 #endif
 
 #if defined(MBEDTLS_ARC4_C)
     if( ssl->conf->arc4_disabled == MBEDTLS_SSL_ARC4_DISABLED &&
-            suite_info->cipher == MBEDTLS_CIPHER_ARC4_128 )
-        return( 1 );
-#endif
-
-#if defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED)
-    if( suite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_ECJPAKE &&
-            mbedtls_ecjpake_check( &ssl->handshake->ecjpake_ctx ) != 0 )
-        return( 1 );
-#endif
-
-    /* Don't suggest PSK-based ciphersuite if no PSK is available. */
-#if defined(MBEDTLS_KEY_EXCHANGE__SOME__PSK_ENABLED)
-    if( mbedtls_ssl_ciphersuite_uses_psk( suite_info ) &&
-        ssl_conf_has_static_psk( ssl->conf ) == 0 )
+        mbedtls_ssl_suite_get_cipher( suite_info ) == MBEDTLS_CIPHER_ARC4_128 )
     {
         return( 1 );
     }
-#endif /* MBEDTLS_KEY_EXCHANGE__SOME__PSK_ENABLED */
+#endif
+
+#if defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED)
+    if( mbedtls_ssl_suite_get_key_exchange( suite_info ) ==
+          MBEDTLS_KEY_EXCHANGE_ECJPAKE &&
+        mbedtls_ecjpake_check( &ssl->handshake->ecjpake_ctx ) != 0 )
+    {
+        return( 1 );
+    }
+#endif
 
     return( 0 );
 }
@@ -863,30 +784,31 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
     unsigned char *buf;
     unsigned char *p, *q;
     unsigned char offer_compress;
-    const int *ciphersuites;
-    const mbedtls_ssl_ciphersuite_t *ciphersuite_info;
-#if defined(MBEDTLS_ECDH_C) || defined(MBEDTLS_ECDSA_C) || \
+#if defined(MBEDTLS_USE_TINYCRYPT) ||                           \
+    defined(MBEDTLS_ECDH_C) || defined(MBEDTLS_ECDSA_C) ||      \
     defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED)
     int uses_ec = 0;
 #endif
 
     MBEDTLS_SSL_DEBUG_MSG( 2, ( "=> write client hello" ) );
 
-    if( ssl->conf->f_rng == NULL )
+    if( mbedtls_ssl_conf_get_frng( ssl->conf ) == NULL )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "no RNG provided") );
         return( MBEDTLS_ERR_SSL_NO_RNG );
     }
 
-#if defined(MBEDTLS_SSL_RENEGOTIATION)
-    if( ssl->renego_status == MBEDTLS_SSL_INITIAL_HANDSHAKE )
-#endif
+    if( mbedtls_ssl_get_renego_status( ssl ) == MBEDTLS_SSL_INITIAL_HANDSHAKE )
     {
-        ssl->major_ver = ssl->conf->min_major_ver;
-        ssl->minor_ver = ssl->conf->min_minor_ver;
+#if !defined(MBEDTLS_SSL_CONF_FIXED_MAJOR_VER)
+        ssl->major_ver = mbedtls_ssl_conf_get_min_major_ver( ssl->conf );
+#endif /* !MBEDTLS_SSL_CONF_FIXED_MAJOR_VER */
+#if !defined(MBEDTLS_SSL_CONF_FIXED_MINOR_VER)
+        ssl->minor_ver = mbedtls_ssl_conf_get_min_minor_ver( ssl->conf );
+#endif /* !MBEDTLS_SSL_CONF_FIXED_MINOR_VER */
     }
 
-    if( ssl->conf->max_major_ver == 0 )
+    if( mbedtls_ssl_conf_get_max_major_ver( ssl->conf ) == 0 )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "configured max major version is invalid, "
                             "consider using mbedtls_ssl_config_defaults()" ) );
@@ -903,8 +825,9 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
     buf = ssl->out_msg;
     p = buf + 4;
 
-    mbedtls_ssl_write_version( ssl->conf->max_major_ver, ssl->conf->max_minor_ver,
-                       ssl->conf->transport, p );
+    mbedtls_ssl_write_version( mbedtls_ssl_conf_get_max_major_ver( ssl->conf ),
+                               mbedtls_ssl_conf_get_max_minor_ver( ssl->conf ),
+                               ssl->conf->transport, p );
     p += 2;
 
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "client hello, max version: [%d:%d]",
@@ -916,7 +839,7 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
         return( ret );
     }
 
-    memcpy( p, ssl->handshake->randbytes, 32 );
+    mbedtls_platform_memcpy( p, ssl->handshake->randbytes, 32 );
     MBEDTLS_SSL_DEBUG_BUF( 3, "client hello, random bytes", p, 32 );
     p += 32;
 
@@ -932,15 +855,23 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
      *   ..   . ..    extensions length (2 bytes)
      *   ..   . ..    extensions
      */
-    n = ssl->session_negotiate->id_len;
 
-    if( n < 16 || n > 32 ||
-#if defined(MBEDTLS_SSL_RENEGOTIATION)
-        ssl->renego_status != MBEDTLS_SSL_INITIAL_HANDSHAKE ||
-#endif
-        ssl->handshake->resume == 0 )
+    /*
+     * We'll write a session of non-zero length if resumption was requested
+     * by the user, we're not renegotiating, and the session ID is of
+     * appropriate length. Otherwise make the length 0 (for now, see next code
+     * block for behaviour with tickets).
+     */
+    if( mbedtls_ssl_handshake_get_resume( ssl->handshake ) == 0 ||
+        mbedtls_ssl_get_renego_status( ssl ) != MBEDTLS_SSL_INITIAL_HANDSHAKE ||
+        ssl->session_negotiate->id_len < 16 ||
+        ssl->session_negotiate->id_len > 32 )
     {
         n = 0;
+    }
+    else
+    {
+        n = ssl->session_negotiate->id_len;
     }
 
 #if defined(MBEDTLS_SSL_SESSION_TICKETS)
@@ -948,20 +879,17 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
      * RFC 5077 section 3.4: "When presenting a ticket, the client MAY
      * generate and include a Session ID in the TLS ClientHello."
      */
-#if defined(MBEDTLS_SSL_RENEGOTIATION)
-    if( ssl->renego_status == MBEDTLS_SSL_INITIAL_HANDSHAKE )
-#endif
+    if( mbedtls_ssl_get_renego_status( ssl ) == MBEDTLS_SSL_INITIAL_HANDSHAKE &&
+        ssl->session_negotiate->ticket != NULL &&
+        ssl->session_negotiate->ticket_len != 0 )
     {
-        if( ssl->session_negotiate->ticket != NULL &&
-                ssl->session_negotiate->ticket_len != 0 )
-        {
-            ret = ssl->conf->f_rng( ssl->conf->p_rng, ssl->session_negotiate->id, 32 );
+        ret = mbedtls_ssl_conf_get_frng( ssl->conf )
+            ( mbedtls_ssl_conf_get_prng( ssl->conf ), ssl->session_negotiate->id, 32 );
 
-            if( ret != 0 )
-                return( ret );
+        if( ret != 0 )
+            return( ret );
 
-            ssl->session_negotiate->id_len = n = 32;
-        }
+        ssl->session_negotiate->id_len = n = 32;
     }
 #endif /* MBEDTLS_SSL_SESSION_TICKETS */
 
@@ -977,7 +905,7 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
      * DTLS cookie
      */
 #if defined(MBEDTLS_SSL_PROTO_DTLS)
-    if( ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_DATAGRAM )
+    if( MBEDTLS_SSL_TRANSPORT_IS_DTLS( ssl->conf->transport ) )
     {
         if( ssl->handshake->verify_cookie == NULL )
         {
@@ -991,7 +919,7 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
                               ssl->handshake->verify_cookie_len );
 
             *p++ = ssl->handshake->verify_cookie_len;
-            memcpy( p, ssl->handshake->verify_cookie,
+            mbedtls_platform_memcpy( p, ssl->handshake->verify_cookie,
                        ssl->handshake->verify_cookie_len );
             p += ssl->handshake->verify_cookie_len;
         }
@@ -1001,47 +929,49 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
     /*
      * Ciphersuite list
      */
-    ciphersuites = ssl->conf->ciphersuite_list[ssl->minor_ver];
 
     /* Skip writing ciphersuite length for now */
     n = 0;
     q = p;
     p += 2;
 
-    for( i = 0; ciphersuites[i] != 0; i++ )
+    MBEDTLS_SSL_BEGIN_FOR_EACH_CIPHERSUITE( ssl,
+                                            mbedtls_ssl_get_minor_ver( ssl ),
+                                            ciphersuite_info )
     {
-        ciphersuite_info = mbedtls_ssl_ciphersuite_from_id( ciphersuites[i] );
-
         if( ssl_validate_ciphersuite( ciphersuite_info, ssl,
-                                      ssl->conf->min_minor_ver,
-                                      ssl->conf->max_minor_ver ) != 0 )
+                       mbedtls_ssl_conf_get_min_minor_ver( ssl->conf ),
+                       mbedtls_ssl_conf_get_max_minor_ver( ssl->conf ) ) != 0 )
+        {
             continue;
+        }
 
         MBEDTLS_SSL_DEBUG_MSG( 3, ( "client hello, add ciphersuite: %04x",
-                                    ciphersuites[i] ) );
+                              mbedtls_ssl_suite_get_id( ciphersuite_info ) ) );
 
-#if defined(MBEDTLS_ECDH_C) || defined(MBEDTLS_ECDSA_C) || \
+#if defined(MBEDTLS_USE_TINYCRYPT) || \
+    defined(MBEDTLS_ECDH_C) || defined(MBEDTLS_ECDSA_C) ||      \
     defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED)
         uses_ec |= mbedtls_ssl_ciphersuite_uses_ec( ciphersuite_info );
 #endif
 
         n++;
-        *p++ = (unsigned char)( ciphersuites[i] >> 8 );
-        *p++ = (unsigned char)( ciphersuites[i]      );
+        *p++ = (unsigned char)(
+            mbedtls_ssl_suite_get_id( ciphersuite_info ) >> 8 );
+        *p++ = (unsigned char)(
+            mbedtls_ssl_suite_get_id( ciphersuite_info )      );
     }
+    MBEDTLS_SSL_END_FOR_EACH_CIPHERSUITE
 
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "client hello, got %d ciphersuites (excluding SCSVs)", n ) );
 
     /*
      * Add TLS_EMPTY_RENEGOTIATION_INFO_SCSV
      */
-#if defined(MBEDTLS_SSL_RENEGOTIATION)
-    if( ssl->renego_status == MBEDTLS_SSL_INITIAL_HANDSHAKE )
-#endif
+    if( mbedtls_ssl_get_renego_status( ssl ) == MBEDTLS_SSL_INITIAL_HANDSHAKE )
     {
         MBEDTLS_SSL_DEBUG_MSG( 3, ( "adding EMPTY_RENEGOTIATION_INFO_SCSV" ) );
-        *p++ = (unsigned char)( MBEDTLS_SSL_EMPTY_RENEGOTIATION_INFO >> 8 );
-        *p++ = (unsigned char)( MBEDTLS_SSL_EMPTY_RENEGOTIATION_INFO      );
+        p = mbedtls_platform_put_uint16_be( p, MBEDTLS_SSL_EMPTY_RENEGOTIATION_INFO );
         n++;
     }
 
@@ -1050,8 +980,7 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
     if( ssl->conf->fallback == MBEDTLS_SSL_IS_FALLBACK )
     {
         MBEDTLS_SSL_DEBUG_MSG( 3, ( "adding FALLBACK_SCSV" ) );
-        *p++ = (unsigned char)( MBEDTLS_SSL_FALLBACK_SCSV_VALUE >> 8 );
-        *p++ = (unsigned char)( MBEDTLS_SSL_FALLBACK_SCSV_VALUE      );
+        p = mbedtls_platform_put_uint16_be( p, MBEDTLS_SSL_FALLBACK_SCSV_VALUE );
         n++;
     }
 #endif
@@ -1072,7 +1001,7 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
      * an actual need for it.
      */
 #if defined(MBEDTLS_SSL_PROTO_DTLS)
-    if( ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_DATAGRAM )
+    if( MBEDTLS_SSL_TRANSPORT_IS_DTLS( ssl->conf->transport ) )
         offer_compress = 0;
 #endif
 
@@ -1098,7 +1027,7 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
 
     // First write extensions, then the total length
     //
-#if defined(MBEDTLS_SSL_SERVER_NAME_INDICATION)
+#if defined(MBEDTLS_SSL_SERVER_NAME_INDICATION) && !defined(MBEDTLS_X509_REMOVE_HOSTNAME_VERIFICATION)
     ssl_write_hostname_ext( ssl, p + 2 + ext_len, &olen );
     ext_len += olen;
 #endif
@@ -1116,7 +1045,10 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
     ext_len += olen;
 #endif
 
-#if defined(MBEDTLS_ECDH_C) || defined(MBEDTLS_ECDSA_C) || \
+#if defined(MBEDTLS_USE_TINYCRYPT) ||           \
+    defined(MBEDTLS_ECDH_C)   ||                \
+    defined(MBEDTLS_ECDSA_C)  ||                \
+    defined(MBEDTLS_USE_TINYCRYPT) ||                \
     defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED)
     if( uses_ec )
     {
@@ -1176,8 +1108,7 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
 
     if( ext_len > 0 )
     {
-        *p++ = (unsigned char)( ( ext_len >> 8 ) & 0xFF );
-        *p++ = (unsigned char)( ( ext_len      ) & 0xFF );
+        p = mbedtls_platform_put_uint16_be( p, ext_len );
         p += ext_len;
     }
 
@@ -1188,7 +1119,7 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
     ssl->state++;
 
 #if defined(MBEDTLS_SSL_PROTO_DTLS)
-    if( ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_DATAGRAM )
+    if( MBEDTLS_SSL_TRANSPORT_IS_DTLS( ssl->conf->transport ) )
         mbedtls_ssl_send_flight_completed( ssl );
 #endif
 
@@ -1199,7 +1130,7 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
     }
 
 #if defined(MBEDTLS_SSL_PROTO_DTLS)
-    if( ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_DATAGRAM &&
+    if( MBEDTLS_SSL_TRANSPORT_IS_DTLS( ssl->conf->transport ) &&
         ( ret = mbedtls_ssl_flight_transmit( ssl ) ) != 0 )
     {
         MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_flight_transmit", ret );
@@ -1222,14 +1153,14 @@ static int ssl_parse_renegotiation_info( mbedtls_ssl_context *ssl,
         /* Check verify-data in constant-time. The length OTOH is no secret */
         if( len    != 1 + ssl->verify_data_len * 2 ||
             buf[0] !=     ssl->verify_data_len * 2 ||
-            mbedtls_ssl_safer_memcmp( buf + 1,
+            mbedtls_platform_memcmp( buf + 1,
                           ssl->own_verify_data, ssl->verify_data_len ) != 0 ||
-            mbedtls_ssl_safer_memcmp( buf + 1 + ssl->verify_data_len,
+            mbedtls_platform_memcmp( buf + 1 + ssl->verify_data_len,
                           ssl->peer_verify_data, ssl->verify_data_len ) != 0 )
         {
             MBEDTLS_SSL_DEBUG_MSG( 1, ( "non-matching renegotiation info" ) );
-            mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                            MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
+            mbedtls_ssl_pend_fatal_alert( ssl,
+                                   MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
             return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
         }
     }
@@ -1239,8 +1170,8 @@ static int ssl_parse_renegotiation_info( mbedtls_ssl_context *ssl,
         if( len != 1 || buf[0] != 0x00 )
         {
             MBEDTLS_SSL_DEBUG_MSG( 1, ( "non-zero length renegotiation info" ) );
-            mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                            MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
+            mbedtls_ssl_pend_fatal_alert( ssl,
+                                   MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
             return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
         }
 
@@ -1264,8 +1195,8 @@ static int ssl_parse_max_fragment_length_ext( mbedtls_ssl_context *ssl,
         buf[0] != ssl->conf->mfl_code )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "non-matching max fragment length extension" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
     }
 
@@ -1282,8 +1213,8 @@ static int ssl_parse_truncated_hmac_ext( mbedtls_ssl_context *ssl,
         len != 0 )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "non-matching truncated HMAC extension" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
     }
 
@@ -1303,21 +1234,21 @@ static int ssl_parse_cid_ext( mbedtls_ssl_context *ssl,
     size_t peer_cid_len;
 
     if( /* CID extension only makes sense in DTLS */
-        ssl->conf->transport != MBEDTLS_SSL_TRANSPORT_DATAGRAM ||
+        MBEDTLS_SSL_TRANSPORT_IS_TLS( ssl->conf->transport ) ||
         /* The server must only send the CID extension if we have offered it. */
         ssl->negotiate_cid == MBEDTLS_SSL_CID_DISABLED )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "CID extension unexpected" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                     MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
     }
 
     if( len == 0 )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "CID extension invalid" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                     MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
     }
 
@@ -1327,21 +1258,22 @@ static int ssl_parse_cid_ext( mbedtls_ssl_context *ssl,
     if( peer_cid_len > MBEDTLS_SSL_CID_OUT_LEN_MAX )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "CID extension invalid" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                     MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
     }
 
     if( len != peer_cid_len )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "CID extension invalid" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                     MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER );
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
     }
 
     ssl->handshake->cid_in_use = MBEDTLS_SSL_CID_ENABLED;
     ssl->handshake->peer_cid_len = (uint8_t) peer_cid_len;
+    /* Not using more secure mbedtls_platform_memcpy as peer_cid is public */
     memcpy( ssl->handshake->peer_cid, buf, peer_cid_len );
 
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "Use of CID extension negotiated" ) );
@@ -1357,12 +1289,12 @@ static int ssl_parse_encrypt_then_mac_ext( mbedtls_ssl_context *ssl,
                                          size_t len )
 {
     if( ssl->conf->encrypt_then_mac == MBEDTLS_SSL_ETM_DISABLED ||
-        ssl->minor_ver == MBEDTLS_SSL_MINOR_VERSION_0 ||
+        mbedtls_ssl_get_minor_ver( ssl ) == MBEDTLS_SSL_MINOR_VERSION_0 ||
         len != 0 )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "non-matching encrypt-then-MAC extension" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
     }
 
@@ -1379,20 +1311,18 @@ static int ssl_parse_extended_ms_ext( mbedtls_ssl_context *ssl,
                                          const unsigned char *buf,
                                          size_t len )
 {
-    if( ssl->conf->extended_ms == MBEDTLS_SSL_EXTENDED_MS_DISABLED ||
-        ssl->minor_ver == MBEDTLS_SSL_MINOR_VERSION_0 ||
+    if( mbedtls_ssl_conf_get_ems( ssl->conf ) ==
+          MBEDTLS_SSL_EXTENDED_MS_DISABLED ||
+        mbedtls_ssl_get_minor_ver( ssl ) == MBEDTLS_SSL_MINOR_VERSION_0 ||
         len != 0 )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "non-matching extended master secret extension" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
     }
 
     ((void) buf);
-
-    ssl->handshake->extended_ms = MBEDTLS_SSL_EXTENDED_MS_ENABLED;
-
     return( 0 );
 }
 #endif /* MBEDTLS_SSL_EXTENDED_MASTER_SECRET */
@@ -1406,8 +1336,8 @@ static int ssl_parse_session_ticket_ext( mbedtls_ssl_context *ssl,
         len != 0 )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "non-matching session ticket extension" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
     }
 
@@ -1419,8 +1349,10 @@ static int ssl_parse_session_ticket_ext( mbedtls_ssl_context *ssl,
 }
 #endif /* MBEDTLS_SSL_SESSION_TICKETS */
 
-#if defined(MBEDTLS_ECDH_C) || defined(MBEDTLS_ECDSA_C) || \
-    defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED)
+#if defined(MBEDTLS_ECDH_C)  ||                      \
+    defined(MBEDTLS_ECDSA_C) ||                      \
+    defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED) || \
+    defined(MBEDTLS_USE_TINYCRYPT)
 static int ssl_parse_supported_point_formats_ext( mbedtls_ssl_context *ssl,
                                                   const unsigned char *buf,
                                                   size_t len )
@@ -1431,8 +1363,8 @@ static int ssl_parse_supported_point_formats_ext( mbedtls_ssl_context *ssl,
     if( len == 0 || (size_t)( buf[0] + 1 ) != len )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server hello message" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
     }
     list_size = buf[0];
@@ -1440,10 +1372,10 @@ static int ssl_parse_supported_point_formats_ext( mbedtls_ssl_context *ssl,
     p = buf + 1;
     while( list_size > 0 )
     {
-        if( p[0] == MBEDTLS_ECP_PF_UNCOMPRESSED ||
-            p[0] == MBEDTLS_ECP_PF_COMPRESSED )
+        if( p[0] == MBEDTLS_SSL_EC_PF_UNCOMPRESSED ||
+            p[0] == MBEDTLS_SSL_EC_PF_COMPRESSED )
         {
-#if defined(MBEDTLS_ECDH_C) || defined(MBEDTLS_ECDSA_C)
+#if defined(MBEDTLS_ECDH_C)
             ssl->handshake->ecdh_ctx.point_format = p[0];
 #endif
 #if defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED)
@@ -1458,11 +1390,11 @@ static int ssl_parse_supported_point_formats_ext( mbedtls_ssl_context *ssl,
     }
 
     MBEDTLS_SSL_DEBUG_MSG( 1, ( "no point format in common" ) );
-    mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                    MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
+    mbedtls_ssl_pend_fatal_alert( ssl,
+                                  MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
     return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
 }
-#endif /* MBEDTLS_ECDH_C || MBEDTLS_ECDSA_C ||
+#endif /* MBEDTLS_ECDH_C || MBEDTLS_ECDSA_C || MBEDTLS_USE_TINYCRYPT ||
           MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED */
 
 #if defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED)
@@ -1472,8 +1404,9 @@ static int ssl_parse_ecjpake_kkpp( mbedtls_ssl_context *ssl,
 {
     int ret;
 
-    if( ssl->handshake->ciphersuite_info->key_exchange !=
-        MBEDTLS_KEY_EXCHANGE_ECJPAKE )
+    if( mbedtls_ssl_suite_get_key_exchange(
+            mbedtls_ssl_handshake_get_ciphersuite( ssl->handshake ) )
+        != MBEDTLS_KEY_EXCHANGE_ECJPAKE )
     {
         MBEDTLS_SSL_DEBUG_MSG( 3, ( "skip ecjpake kkpp extension" ) );
         return( 0 );
@@ -1488,8 +1421,8 @@ static int ssl_parse_ecjpake_kkpp( mbedtls_ssl_context *ssl,
                                                 buf, len ) ) != 0 )
     {
         MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ecjpake_read_round_one", ret );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
         return( ret );
     }
 
@@ -1508,8 +1441,8 @@ static int ssl_parse_alpn_ext( mbedtls_ssl_context *ssl,
     if( ssl->conf->alpn_list == NULL )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "non-matching ALPN extension" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
     }
 
@@ -1526,24 +1459,24 @@ static int ssl_parse_alpn_ext( mbedtls_ssl_context *ssl,
     /* Min length is 2 (list_len) + 1 (name_len) + 1 (name) */
     if( len < 4 )
     {
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
     }
 
-    list_len = ( buf[0] << 8 ) | buf[1];
+    list_len = mbedtls_platform_get_uint16_be( buf );
     if( list_len != len - 2 )
     {
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
     }
 
     name_len = buf[2];
     if( name_len != list_len - 1 )
     {
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
     }
 
@@ -1551,7 +1484,7 @@ static int ssl_parse_alpn_ext( mbedtls_ssl_context *ssl,
     for( p = ssl->conf->alpn_list; *p != NULL; p++ )
     {
         if( name_len == strlen( *p ) &&
-            memcmp( buf + 3, *p, name_len ) == 0 )
+            mbedtls_platform_memcmp( buf + 3, *p, name_len ) == 0 )
         {
             ssl->alpn_chosen = *p;
             return( 0 );
@@ -1559,8 +1492,8 @@ static int ssl_parse_alpn_ext( mbedtls_ssl_context *ssl,
     }
 
     MBEDTLS_SSL_DEBUG_MSG( 1, ( "ALPN extension: no matching protocol" ) );
-    mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                    MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
+    mbedtls_ssl_pend_fatal_alert( ssl,
+                                  MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
     return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
 }
 #endif /* MBEDTLS_SSL_ALPN */
@@ -1591,15 +1524,17 @@ static int ssl_parse_hello_verify_request( mbedtls_ssl_context *ssl )
      * Since the RFC is not clear on this point, accept DTLS 1.0 (TLS 1.1)
      * even is lower than our min version.
      */
-    if( major_ver < MBEDTLS_SSL_MAJOR_VERSION_3 ||
-        minor_ver < MBEDTLS_SSL_MINOR_VERSION_2 ||
-        major_ver > ssl->conf->max_major_ver  ||
-        minor_ver > ssl->conf->max_minor_ver  )
+    if( mbedtls_ssl_ver_lt( major_ver, MBEDTLS_SSL_MAJOR_VERSION_3 ) ||
+        mbedtls_ssl_ver_lt( minor_ver, MBEDTLS_SSL_MINOR_VERSION_2 ) ||
+        mbedtls_ssl_ver_gt( major_ver,
+                            mbedtls_ssl_conf_get_max_major_ver( ssl->conf ) ) ||
+        mbedtls_ssl_ver_gt( minor_ver,
+                            mbedtls_ssl_conf_get_max_minor_ver( ssl->conf ) ) )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server version" ) );
 
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                     MBEDTLS_SSL_ALERT_MSG_PROTOCOL_VERSION );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_PROTOCOL_VERSION );
 
         return( MBEDTLS_ERR_SSL_BAD_HS_PROTOCOL_VERSION );
     }
@@ -1611,8 +1546,8 @@ static int ssl_parse_hello_verify_request( mbedtls_ssl_context *ssl )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1,
             ( "cookie length does not match incoming message size" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                    MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
     }
 
@@ -1625,7 +1560,7 @@ static int ssl_parse_hello_verify_request( mbedtls_ssl_context *ssl )
         return( MBEDTLS_ERR_SSL_ALLOC_FAILED );
     }
 
-    memcpy( ssl->handshake->verify_cookie, p, cookie_len );
+    mbedtls_platform_memcpy( ssl->handshake->verify_cookie, p, cookie_len );
     ssl->handshake->verify_cookie_len = cookie_len;
 
     /* Start over at ClientHello */
@@ -1653,8 +1588,13 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
 #if defined(MBEDTLS_SSL_RENEGOTIATION)
     int renegotiation_info_seen = 0;
 #endif
+#if defined(MBEDTLS_SSL_EXTENDED_MASTER_SECRET)
+    int extended_ms_seen = 0;
+#endif
     int handshake_failure = 0;
-    const mbedtls_ssl_ciphersuite_t *suite_info;
+
+    /* The ciphersuite chosen by the server. */
+    mbedtls_ssl_ciphersuite_handle_t server_suite_info;
 
     MBEDTLS_SSL_DEBUG_MSG( 2, ( "=> parse server hello" ) );
 
@@ -1690,13 +1630,13 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
 #endif /* MBEDTLS_SSL_RENEGOTIATION */
 
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server hello message" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_UNEXPECTED_MESSAGE );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                        MBEDTLS_SSL_ALERT_MSG_UNEXPECTED_MESSAGE );
         return( MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE );
     }
 
 #if defined(MBEDTLS_SSL_PROTO_DTLS)
-    if( ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_DATAGRAM )
+    if( MBEDTLS_SSL_TRANSPORT_IS_DTLS( ssl->conf->transport ) )
     {
         if( buf[0] == MBEDTLS_SSL_HS_HELLO_VERIFY_REQUEST )
         {
@@ -1718,8 +1658,8 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
         buf[0] != MBEDTLS_SSL_HS_SERVER_HELLO )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server hello message" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
     }
 
@@ -1736,34 +1676,50 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
      */
     buf += mbedtls_ssl_hs_hdr_len( ssl );
 
-    MBEDTLS_SSL_DEBUG_BUF( 3, "server hello, version", buf + 0, 2 );
-    mbedtls_ssl_read_version( &ssl->major_ver, &ssl->minor_ver,
-                      ssl->conf->transport, buf + 0 );
-
-    if( ssl->major_ver < ssl->conf->min_major_ver ||
-        ssl->minor_ver < ssl->conf->min_minor_ver ||
-        ssl->major_ver > ssl->conf->max_major_ver ||
-        ssl->minor_ver > ssl->conf->max_minor_ver )
     {
-        MBEDTLS_SSL_DEBUG_MSG( 1, ( "server version out of bounds - "
-                            " min: [%d:%d], server: [%d:%d], max: [%d:%d]",
-                            ssl->conf->min_major_ver, ssl->conf->min_minor_ver,
-                            ssl->major_ver, ssl->minor_ver,
-                            ssl->conf->max_major_ver, ssl->conf->max_minor_ver ) );
+        int major_ver, minor_ver;
 
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                     MBEDTLS_SSL_ALERT_MSG_PROTOCOL_VERSION );
+        MBEDTLS_SSL_DEBUG_BUF( 3, "server hello, version", buf + 0, 2 );
+        mbedtls_ssl_read_version( &major_ver, &minor_ver,
+                                  ssl->conf->transport,
+                                  buf + 0 );
 
-        return( MBEDTLS_ERR_SSL_BAD_HS_PROTOCOL_VERSION );
+        if( mbedtls_ssl_ver_lt( major_ver,
+                                mbedtls_ssl_conf_get_min_major_ver( ssl->conf ) ) ||
+            mbedtls_ssl_ver_lt( minor_ver,
+                                mbedtls_ssl_conf_get_min_minor_ver( ssl->conf ) ) ||
+            mbedtls_ssl_ver_gt( major_ver,
+                                mbedtls_ssl_conf_get_max_major_ver( ssl->conf ) ) ||
+            mbedtls_ssl_ver_gt( minor_ver,
+                                mbedtls_ssl_conf_get_max_minor_ver( ssl->conf ) ) )
+        {
+            MBEDTLS_SSL_DEBUG_MSG( 1, ( "server version out of bounds - "
+                         " min: [%d:%d], server: [%d:%d], max: [%d:%d]",
+                         mbedtls_ssl_conf_get_min_major_ver( ssl->conf ),
+                         mbedtls_ssl_conf_get_min_minor_ver( ssl->conf ),
+                         major_ver, minor_ver,
+                         mbedtls_ssl_conf_get_max_major_ver( ssl->conf ),
+                         mbedtls_ssl_conf_get_max_minor_ver( ssl->conf ) ) );
+
+            mbedtls_ssl_pend_fatal_alert( ssl,
+                                 MBEDTLS_SSL_ALERT_MSG_PROTOCOL_VERSION );
+
+            return( MBEDTLS_ERR_SSL_BAD_HS_PROTOCOL_VERSION );
+        }
+
+#if !defined(MBEDTLS_SSL_CONF_FIXED_MINOR_VER)
+        ssl->minor_ver = minor_ver;
+#endif /* !MBEDTLS_SSL_CONF_FIXED_MINOR_VER */
+
+#if !defined(MBEDTLS_SSL_CONF_FIXED_MAJOR_VER)
+        ssl->major_ver = major_ver;
+#endif /* !MBEDTLS_SSL_CONF_FIXED_MAJOR_VER */
     }
 
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "server hello, current time: %lu",
-                           ( (uint32_t) buf[2] << 24 ) |
-                           ( (uint32_t) buf[3] << 16 ) |
-                           ( (uint32_t) buf[4] <<  8 ) |
-                           ( (uint32_t) buf[5]       ) ) );
+        (unsigned long)mbedtls_platform_get_uint32_be( &buf[2] ) ) );
 
-    memcpy( ssl->handshake->randbytes + 32, buf + 2, 32 );
+    mbedtls_platform_memcpy( ssl->handshake->randbytes + 32, buf + 2, 32 );
 
     n = buf[34];
 
@@ -1772,22 +1728,21 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
     if( n > 32 )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server hello message" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
     }
 
     if( ssl->in_hslen > mbedtls_ssl_hs_hdr_len( ssl ) + 39 + n )
     {
-        ext_len = ( ( buf[38 + n] <<  8 )
-                  | ( buf[39 + n]       ) );
+        ext_len = mbedtls_platform_get_uint16_be( &buf[38 + n] );
 
         if( ( ext_len > 0 && ext_len < 4 ) ||
             ssl->in_hslen != mbedtls_ssl_hs_hdr_len( ssl ) + 40 + n + ext_len )
         {
             MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server hello message" ) );
-            mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                            MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
+            mbedtls_ssl_pend_fatal_alert( ssl,
+                                          MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
             return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
         }
     }
@@ -1798,13 +1753,13 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
     else
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server hello message" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
     }
 
     /* ciphersuite (used later) */
-    i = ( buf[35 + n] << 8 ) | buf[36 + n];
+    i = (int)mbedtls_platform_get_uint16_be( &buf[ 35 + n ] );
 
     /*
      * Read and check compression
@@ -1813,12 +1768,7 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
 
 #if defined(MBEDTLS_ZLIB_SUPPORT)
     /* See comments in ssl_write_client_hello() */
-#if defined(MBEDTLS_SSL_PROTO_DTLS)
-    if( ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_DATAGRAM )
-        accept_comp = 0;
-    else
-#endif
-        accept_comp = 1;
+    accept_comp = MBEDTLS_SSL_TRANSPORT_IS_TLS( ssl->conf->transport );
 
     if( comp != MBEDTLS_SSL_COMPRESS_NULL &&
         ( comp != MBEDTLS_SSL_COMPRESS_DEFLATE || accept_comp == 0 ) )
@@ -1827,65 +1777,85 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
 #endif/* MBEDTLS_ZLIB_SUPPORT */
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "server hello, bad compression: %d", comp ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER );
         return( MBEDTLS_ERR_SSL_FEATURE_UNAVAILABLE );
     }
 
     /*
      * Initialize update checksum functions
      */
-    ssl->handshake->ciphersuite_info = mbedtls_ssl_ciphersuite_from_id( i );
-    if( ssl->handshake->ciphersuite_info == NULL )
+    server_suite_info = mbedtls_ssl_ciphersuite_from_id( i );
+#if !defined(MBEDTLS_SSL_CONF_SINGLE_CIPHERSUITE)
+    ssl->handshake->ciphersuite_info = server_suite_info;
+#endif
+    if( server_suite_info == MBEDTLS_SSL_CIPHERSUITE_INVALID_HANDLE )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "ciphersuite info for %04x not found", i ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_INTERNAL_ERROR );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_INTERNAL_ERROR );
         return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
     }
-
-    mbedtls_ssl_optimize_checksum( ssl, ssl->handshake->ciphersuite_info );
 
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "server hello, session id len.: %d", n ) );
     MBEDTLS_SSL_DEBUG_BUF( 3,   "server hello, session id", buf + 35, n );
 
     /*
      * Check if the session can be resumed
+     *
+     * We're only resuming a session if it was requested (handshake->resume
+     * already set to 1 by mbedtls_ssl_set_session()), and further conditions
+     * are satisfied (not renegotiating, ID and ciphersuite match, etc).
+     *
+     * Update handshake->resume to the value it will keep for the rest of the
+     * handshake, and that will be used to determine the relative order
+     * client/server last flights, as well as in handshake_wrapup().
      */
-    if( ssl->handshake->resume == 0 || n == 0 ||
-#if defined(MBEDTLS_SSL_RENEGOTIATION)
-        ssl->renego_status != MBEDTLS_SSL_INITIAL_HANDSHAKE ||
-#endif
-        ssl->session_negotiate->ciphersuite != i ||
-        ssl->session_negotiate->compression != comp ||
+#if !defined(MBEDTLS_SSL_NO_SESSION_RESUMPTION)
+    if( n == 0 ||
+        mbedtls_ssl_get_renego_status( ssl ) != MBEDTLS_SSL_INITIAL_HANDSHAKE ||
+        mbedtls_ssl_session_get_ciphersuite( ssl->session_negotiate ) != i ||
+        mbedtls_ssl_session_get_compression( ssl->session_negotiate ) != comp ||
         ssl->session_negotiate->id_len != n ||
-        memcmp( ssl->session_negotiate->id, buf + 35, n ) != 0 )
+        mbedtls_platform_memcmp( ssl->session_negotiate->id, buf + 35, n ) != 0 )
     {
-        ssl->state++;
         ssl->handshake->resume = 0;
-#if defined(MBEDTLS_HAVE_TIME)
-        ssl->session_negotiate->start = mbedtls_time( NULL );
-#endif
-        ssl->session_negotiate->ciphersuite = i;
-        ssl->session_negotiate->compression = comp;
-        ssl->session_negotiate->id_len = n;
-        memcpy( ssl->session_negotiate->id, buf + 35, n );
     }
-    else
+#endif /* !MBEDTLS_SSL_NO_SESSION_RESUMPTION */
+
+    if( mbedtls_ssl_handshake_get_resume( ssl->handshake ) == 1 )
     {
+        /* Resume a session */
         ssl->state = MBEDTLS_SSL_SERVER_CHANGE_CIPHER_SPEC;
 
         if( ( ret = mbedtls_ssl_derive_keys( ssl ) ) != 0 )
         {
             MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_derive_keys", ret );
-            mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                            MBEDTLS_SSL_ALERT_MSG_INTERNAL_ERROR );
+            mbedtls_ssl_pend_fatal_alert( ssl,
+                                  MBEDTLS_SSL_ALERT_MSG_INTERNAL_ERROR );
             return( ret );
         }
     }
+    else
+    {
+        /* Start a new session */
+        ssl->state++;
+#if defined(MBEDTLS_HAVE_TIME)
+        ssl->session_negotiate->start = mbedtls_time( NULL );
+#endif
+#if !defined(MBEDTLS_SSL_CONF_SINGLE_CIPHERSUITE)
+        ssl->session_negotiate->ciphersuite = i;
+#endif /* MBEDTLS_SSL_CONF_SINGLE_CIPHERSUITE */
+#if defined(MBEDTLS_ZLIB_SUPPORT)
+        ssl->session_negotiate->compression = comp;
+#endif
+        ssl->session_negotiate->id_len = n;
+        /* Not using more secure mbedtls_platform_memcpy as id is public */
+        memcpy( ssl->session_negotiate->id, buf + 35, n );
+    }
 
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "%s session has been resumed",
-                   ssl->handshake->resume ? "a" : "no" ) );
+               mbedtls_ssl_handshake_get_resume( ssl->handshake ) ? "a" : "no" ) );
 
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "server hello, chosen ciphersuite: %04x", i ) );
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "server hello, compress alg.: %d", buf[37 + n] ) );
@@ -1893,38 +1863,40 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
     /*
      * Perform cipher suite validation in same way as in ssl_write_client_hello.
      */
-    i = 0;
-    while( 1 )
+    MBEDTLS_SSL_BEGIN_FOR_EACH_CIPHERSUITE( ssl,
+                                            mbedtls_ssl_get_minor_ver( ssl ),
+                                            ciphersuite_info )
     {
-        if( ssl->conf->ciphersuite_list[ssl->minor_ver][i] == 0 )
+        if( ssl_validate_ciphersuite( ciphersuite_info, ssl,
+                    mbedtls_ssl_conf_get_min_minor_ver( ssl->conf ),
+                    mbedtls_ssl_conf_get_max_minor_ver( ssl->conf ) ) != 0 )
         {
-            MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server hello message" ) );
-            mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                            MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER );
-            return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
+            continue;
         }
 
-        if( ssl->conf->ciphersuite_list[ssl->minor_ver][i++] ==
-            ssl->session_negotiate->ciphersuite )
-        {
-            break;
-        }
-    }
+        if( ciphersuite_info != server_suite_info )
+            continue;
 
-    suite_info = mbedtls_ssl_ciphersuite_from_id( ssl->session_negotiate->ciphersuite );
-    if( ssl_validate_ciphersuite( suite_info, ssl, ssl->minor_ver, ssl->minor_ver ) != 0 )
-    {
-        MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server hello message" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER );
-        return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
+        goto server_picked_valid_suite;
     }
+    MBEDTLS_SSL_END_FOR_EACH_CIPHERSUITE
 
-    MBEDTLS_SSL_DEBUG_MSG( 3, ( "server hello, chosen ciphersuite: %s", suite_info->name ) );
+    /* If we reach this code-path, the server's chosen ciphersuite
+     * wasn't among those advertised by us. */
+    MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server hello message" ) );
+    mbedtls_ssl_pend_fatal_alert( ssl,
+                                  MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER );
+    return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
+
+server_picked_valid_suite:
+
+    MBEDTLS_SSL_DEBUG_MSG( 3, ( "server hello, chosen ciphersuite: %s",
+                                mbedtls_ssl_suite_get_name( server_suite_info ) ) );
 
 #if defined(MBEDTLS_SSL__ECP_RESTARTABLE)
-    if( suite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA &&
-        ssl->minor_ver == MBEDTLS_SSL_MINOR_VERSION_3 )
+    if( mbedtls_ssl_suite_get_key_exchange( server_suite_info ) ==
+          MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA &&
+        mbedtls_ssl_get_minor_ver( ssl ) == MBEDTLS_SSL_MINOR_VERSION_3 )
     {
         ssl->handshake->ecrs_enabled = 1;
     }
@@ -1937,28 +1909,31 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
       )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server hello message" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER );
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
     }
+#if defined(MBEDTLS_ZLIB_SUPPORT)
     ssl->session_negotiate->compression = comp;
+#endif
 
     ext = buf + 40 + n;
 
-    MBEDTLS_SSL_DEBUG_MSG( 2, ( "server hello, total extension length: %d", ext_len ) );
+    MBEDTLS_SSL_DEBUG_MSG( 2, ( "server hello, total extension length: %d",
+                                ext_len ) );
 
     while( ext_len )
     {
-        unsigned int ext_id   = ( ( ext[0] <<  8 )
-                                | ( ext[1]       ) );
-        unsigned int ext_size = ( ( ext[2] <<  8 )
-                                | ( ext[3]       ) );
+        unsigned int ext_id   = (unsigned int)
+            mbedtls_platform_get_uint16_be( ext );
+        unsigned int ext_size = (unsigned int)
+            mbedtls_platform_get_uint16_be( &ext[2] );
 
         if( ext_size + 4 > ext_len )
         {
             MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server hello message" ) );
-            mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                            MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
+            mbedtls_ssl_pend_fatal_alert( ssl,
+                                          MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
             return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
         }
 
@@ -2038,6 +2013,7 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
             {
                 return( ret );
             }
+            extended_ms_seen = 1;
 
             break;
 #endif /* MBEDTLS_SSL_EXTENDED_MASTER_SECRET */
@@ -2055,7 +2031,8 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
             break;
 #endif /* MBEDTLS_SSL_SESSION_TICKETS */
 
-#if defined(MBEDTLS_ECDH_C) || defined(MBEDTLS_ECDSA_C) || \
+#if defined(MBEDTLS_USE_TINYCRYPT) ||                           \
+    defined(MBEDTLS_ECDH_C) || defined(MBEDTLS_ECDSA_C) ||      \
     defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED)
         case MBEDTLS_TLS_EXT_SUPPORTED_POINT_FORMATS:
             MBEDTLS_SSL_DEBUG_MSG( 3, ( "found supported_point_formats extension" ) );
@@ -2112,7 +2089,8 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
      * Renegotiation security checks
      */
     if( ssl->secure_renegotiation == MBEDTLS_SSL_LEGACY_RENEGOTIATION &&
-        ssl->conf->allow_legacy_renegotiation == MBEDTLS_SSL_LEGACY_BREAK_HANDSHAKE )
+        mbedtls_ssl_conf_get_allow_legacy_renegotiation( ssl->conf ) ==
+          MBEDTLS_SSL_LEGACY_BREAK_HANDSHAKE )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "legacy renegotiation, breaking off handshake" ) );
         handshake_failure = 1;
@@ -2127,7 +2105,8 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
     }
     else if( ssl->renego_status == MBEDTLS_SSL_RENEGOTIATION_IN_PROGRESS &&
              ssl->secure_renegotiation == MBEDTLS_SSL_LEGACY_RENEGOTIATION &&
-             ssl->conf->allow_legacy_renegotiation == MBEDTLS_SSL_LEGACY_NO_RENEGOTIATION )
+             mbedtls_ssl_conf_get_allow_legacy_renegotiation( ssl->conf ) ==
+               MBEDTLS_SSL_LEGACY_NO_RENEGOTIATION )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "legacy renegotiation not allowed" ) );
         handshake_failure = 1;
@@ -2141,10 +2120,33 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
     }
 #endif /* MBEDTLS_SSL_RENEGOTIATION */
 
+    /*
+     * Check if extended master secret is being enforced
+     */
+#if defined(MBEDTLS_SSL_EXTENDED_MASTER_SECRET)
+    if( mbedtls_ssl_conf_get_ems( ssl->conf ) ==
+        MBEDTLS_SSL_EXTENDED_MS_ENABLED )
+    {
+        if( extended_ms_seen )
+        {
+#if !defined(MBEDTLS_SSL_EXTENDED_MS_ENFORCED)
+            ssl->handshake->extended_ms = MBEDTLS_SSL_EXTENDED_MS_ENABLED;
+#endif /* !MBEDTLS_SSL_EXTENDED_MS_ENFORCED */
+        }
+        else if( mbedtls_ssl_conf_get_ems_enforced( ssl->conf ) ==
+                 MBEDTLS_SSL_EXTENDED_MS_ENFORCE_ENABLED )
+        {
+            MBEDTLS_SSL_DEBUG_MSG( 1, ( "Peer not offering extended master "
+                                    "secret, while it is enforced") );
+            handshake_failure = 1;
+        }
+    }
+#endif /* MBEDTLS_SSL_EXTENDED_MASTER_SECRET */
+
     if( handshake_failure == 1 )
     {
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
     }
 
@@ -2192,11 +2194,12 @@ static int ssl_parse_server_dh_params( mbedtls_ssl_context *ssl, unsigned char *
 #endif /* MBEDTLS_KEY_EXCHANGE_DHE_RSA_ENABLED ||
           MBEDTLS_KEY_EXCHANGE_DHE_PSK_ENABLED */
 
-#if defined(MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED) ||                     \
-    defined(MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED) ||                   \
-    defined(MBEDTLS_KEY_EXCHANGE_ECDHE_PSK_ENABLED) ||                     \
-    defined(MBEDTLS_KEY_EXCHANGE_ECDH_RSA_ENABLED) ||                      \
-    defined(MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA_ENABLED)
+#if defined(MBEDTLS_ECDH_C) &&                                          \
+    ( defined(MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED)   ||              \
+      defined(MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED) ||              \
+      defined(MBEDTLS_KEY_EXCHANGE_ECDHE_PSK_ENABLED)   ||              \
+      defined(MBEDTLS_KEY_EXCHANGE_ECDH_RSA_ENABLED)    ||              \
+      defined(MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA_ENABLED) )
 static int ssl_check_server_ecdh_params( const mbedtls_ssl_context *ssl )
 {
     const mbedtls_ecp_curve_info *curve_info;
@@ -2229,73 +2232,17 @@ static int ssl_check_server_ecdh_params( const mbedtls_ssl_context *ssl )
 
     return( 0 );
 }
-#endif /* MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED ||
-          MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED ||
-          MBEDTLS_KEY_EXCHANGE_ECDHE_PSK_ENABLED ||
-          MBEDTLS_KEY_EXCHANGE_ECDH_RSA_ENABLED ||
-          MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA_ENABLED */
+#endif /* MBEDTLS_ECDH_C &&
+         ( MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED   ||
+           MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED ||
+           MBEDTLS_KEY_EXCHANGE_ECDHE_PSK_ENABLED   ||
+           MBEDTLS_KEY_EXCHANGE_ECDH_RSA_ENABLED    ||
+           MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA_ENABLED  ) */
 
-#if defined(MBEDTLS_USE_PSA_CRYPTO) &&                           \
-        ( defined(MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED) ||     \
-          defined(MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED) )
-static int ssl_parse_server_ecdh_params_psa( mbedtls_ssl_context *ssl,
-                                             unsigned char **p,
-                                             unsigned char *end )
-{
-    uint16_t tls_id;
-    uint8_t ecpoint_len;
-    mbedtls_ssl_handshake_params *handshake = ssl->handshake;
-
-    /*
-     * Parse ECC group
-     */
-
-    if( end - *p < 4 )
-        return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_KEY_EXCHANGE );
-
-    /* First byte is curve_type; only named_curve is handled */
-    if( *(*p)++ != MBEDTLS_ECP_TLS_NAMED_CURVE )
-        return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_KEY_EXCHANGE );
-
-    /* Next two bytes are the namedcurve value */
-    tls_id = *(*p)++;
-    tls_id <<= 8;
-    tls_id |= *(*p)++;
-
-    /* Convert EC group to PSA key type. */
-    if( ( handshake->ecdh_psa_curve =
-          mbedtls_psa_parse_tls_ecc_group( tls_id ) ) == 0 )
-    {
-        return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_KEY_EXCHANGE );
-    }
-
-    /*
-     * Put peer's ECDH public key in the format understood by PSA.
-     */
-
-    ecpoint_len = *(*p)++;
-    if( (size_t)( end - *p ) < ecpoint_len )
-        return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_KEY_EXCHANGE );
-
-    if( mbedtls_psa_tls_ecpoint_to_psa_ec( handshake->ecdh_psa_curve,
-                                    *p, ecpoint_len,
-                                    handshake->ecdh_psa_peerkey,
-                                    sizeof( handshake->ecdh_psa_peerkey ),
-                                    &handshake->ecdh_psa_peerkey_len ) != 0 )
-    {
-        return( MBEDTLS_ERR_SSL_HW_ACCEL_FAILED );
-    }
-
-    *p += ecpoint_len;
-    return( 0 );
-}
-#endif /* MBEDTLS_USE_PSA_CRYPTO &&
-            ( MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED ||
-              MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED ) */
-
-#if defined(MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED) ||                     \
-    defined(MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED) ||                   \
-    defined(MBEDTLS_KEY_EXCHANGE_ECDHE_PSK_ENABLED)
+#if defined(MBEDTLS_ECDH_C) &&                                          \
+    ( defined(MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED)   ||              \
+      defined(MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED) ||              \
+      defined(MBEDTLS_KEY_EXCHANGE_ECDHE_PSK_ENABLED))
 static int ssl_parse_server_ecdh_params( mbedtls_ssl_context *ssl,
                                          unsigned char **p,
                                          unsigned char *end )
@@ -2314,10 +2261,6 @@ static int ssl_parse_server_ecdh_params( mbedtls_ssl_context *ssl,
                                   (const unsigned char **) p, end ) ) != 0 )
     {
         MBEDTLS_SSL_DEBUG_RET( 1, ( "mbedtls_ecdh_read_params" ), ret );
-#if defined(MBEDTLS_SSL__ECP_RESTARTABLE)
-        if( ret == MBEDTLS_ERR_ECP_IN_PROGRESS )
-            ret = MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS;
-#endif
         return( ret );
     }
 
@@ -2329,9 +2272,10 @@ static int ssl_parse_server_ecdh_params( mbedtls_ssl_context *ssl,
 
     return( ret );
 }
-#endif /* MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED ||
-          MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED ||
-          MBEDTLS_KEY_EXCHANGE_ECDHE_PSK_ENABLED */
+#endif /* MBEDTLS_ECDH_C &&
+          ( MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED   ||
+            MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED ||
+            MBEDTLS_KEY_EXCHANGE_ECDHE_PSK_ENABLED    ) */
 
 #if defined(MBEDTLS_KEY_EXCHANGE__SOME__PSK_ENABLED)
 static int ssl_parse_server_psk_hint( mbedtls_ssl_context *ssl,
@@ -2353,7 +2297,7 @@ static int ssl_parse_server_psk_hint( mbedtls_ssl_context *ssl,
                                     "(psk_identity_hint length)" ) );
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_KEY_EXCHANGE );
     }
-    len = (*p)[0] << 8 | (*p)[1];
+    len = mbedtls_platform_get_uint16_be( *p );
     *p += 2;
 
     if( end - (*p) < (int) len )
@@ -2377,88 +2321,128 @@ static int ssl_parse_server_psk_hint( mbedtls_ssl_context *ssl,
 
 #if defined(MBEDTLS_KEY_EXCHANGE_RSA_ENABLED) ||                           \
     defined(MBEDTLS_KEY_EXCHANGE_RSA_PSK_ENABLED)
-/*
- * Generate a pre-master secret and encrypt it with the server's RSA key
- */
-static int ssl_write_encrypted_pms( mbedtls_ssl_context *ssl,
-                                    size_t offset, size_t *olen,
-                                    size_t pms_offset )
+
+/* This function assumes that `out` points to a writable buffer
+ * of size 48 Bytes if `add_length_tag == 0` and size 50 Bytes
+ * if `add_length_tag != 0`. */
+static int ssl_rsa_generate_partial_pms( mbedtls_ssl_context *ssl,
+                                         unsigned char* out,
+                                         unsigned add_length_tag )
 {
     int ret;
-    size_t len_bytes = ssl->minor_ver == MBEDTLS_SSL_MINOR_VERSION_0 ? 0 : 2;
-    unsigned char *p = ssl->handshake->premaster + pms_offset;
-    mbedtls_pk_context * peer_pk;
-
-    if( offset + len_bytes > MBEDTLS_SSL_OUT_CONTENT_LEN )
-    {
-        MBEDTLS_SSL_DEBUG_MSG( 1, ( "buffer too small for encrypted pms" ) );
-        return( MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL );
-    }
 
     /*
-     * Generate (part of) the pre-master as
+     * Generate (part of) the pre-master secret as
      *  struct {
+     *      [ uint16 length(48) ]
      *      ProtocolVersion client_version;
      *      opaque random[46];
      *  } PreMasterSecret;
      */
-    mbedtls_ssl_write_version( ssl->conf->max_major_ver, ssl->conf->max_minor_ver,
-                       ssl->conf->transport, p );
 
-    if( ( ret = ssl->conf->f_rng( ssl->conf->p_rng, p + 2, 46 ) ) != 0 )
+    if( add_length_tag )
+    {
+        out[0] = 0;
+        out[1] = 48;
+        out += 2;
+    }
+
+    mbedtls_ssl_write_version( mbedtls_ssl_conf_get_max_major_ver( ssl->conf ),
+                               mbedtls_ssl_conf_get_max_minor_ver( ssl->conf ),
+                               ssl->conf->transport, out );
+
+    if( ( ret = mbedtls_ssl_conf_get_frng( ssl->conf )
+          ( mbedtls_ssl_conf_get_prng( ssl->conf ), out + 2, 46 ) ) != 0 )
     {
         MBEDTLS_SSL_DEBUG_RET( 1, "f_rng", ret );
         return( ret );
     }
 
-    ssl->handshake->pmslen = 48;
+    return( 0 );
+}
+
+/*
+ * Encrypt the randomly chosen part of the Premaster Secret with the
+ * server's RSA key and write it to the provided buffer.
+ */
+static int ssl_rsa_encrypt_partial_pms( mbedtls_ssl_context *ssl,
+                                        unsigned char const *ppms,
+                                        unsigned char *out, size_t buflen,
+                                        size_t *olen )
+{
+    int ret;
+    size_t len_bytes = mbedtls_ssl_get_minor_ver( ssl ) ==
+        MBEDTLS_SSL_MINOR_VERSION_0 ? 0 : 2;
+    mbedtls_pk_context *peer_pk = NULL;
+
+    if( buflen < len_bytes )
+    {
+        MBEDTLS_SSL_DEBUG_MSG( 1, ( "buffer too small for encrypted pms" ) );
+        return( MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL );
+    }
 
 #if !defined(MBEDTLS_SSL_KEEP_PEER_CERTIFICATE)
-    peer_pk = &ssl->handshake->peer_pubkey;
+    if( ssl->handshake->got_peer_pubkey )
+        peer_pk = &ssl->handshake->peer_pubkey;
 #else /* !MBEDTLS_SSL_KEEP_PEER_CERTIFICATE */
-    if( ssl->session_negotiate->peer_cert == NULL )
+    if( ssl->session_negotiate->peer_cert != NULL )
+    {
+        ret = mbedtls_x509_crt_pk_acquire( ssl->session_negotiate->peer_cert,
+                                           &peer_pk );
+        if( ret != 0 )
+        {
+            MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_x509_crt_pk_acquire", ret );
+            return( ret );
+        }
+    }
+#endif /* MBEDTLS_SSL_KEEP_PEER_CERTIFICATE */
+
+    if( peer_pk == NULL )
     {
         /* Should never happen */
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "should never happen" ) );
         return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
     }
-    peer_pk = &ssl->session_negotiate->peer_cert->pk;
-#endif /* MBEDTLS_SSL_KEEP_PEER_CERTIFICATE */
 
     /*
-     * Now write it out, encrypted
+     * Encrypt the partial premaster secret and write it out.
      */
     if( ! mbedtls_pk_can_do( peer_pk, MBEDTLS_PK_RSA ) )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "certificate key type mismatch" ) );
-        return( MBEDTLS_ERR_SSL_PK_TYPE_MISMATCH );
+        ret = MBEDTLS_ERR_SSL_PK_TYPE_MISMATCH;
+        goto cleanup;
     }
 
     if( ( ret = mbedtls_pk_encrypt( peer_pk,
-                            p, ssl->handshake->pmslen,
-                            ssl->out_msg + offset + len_bytes, olen,
-                            MBEDTLS_SSL_OUT_CONTENT_LEN - offset - len_bytes,
-                            ssl->conf->f_rng, ssl->conf->p_rng ) ) != 0 )
+                            ppms, 48, out + len_bytes,
+                            olen, buflen - len_bytes,
+                            mbedtls_ssl_conf_get_frng( ssl->conf ),
+                            mbedtls_ssl_conf_get_prng( ssl->conf ) ) ) != 0 )
     {
         MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_rsa_pkcs1_encrypt", ret );
-        return( ret );
+        goto cleanup;
     }
 
 #if defined(MBEDTLS_SSL_PROTO_TLS1) || defined(MBEDTLS_SSL_PROTO_TLS1_1) || \
     defined(MBEDTLS_SSL_PROTO_TLS1_2)
     if( len_bytes == 2 )
     {
-        ssl->out_msg[offset+0] = (unsigned char)( *olen >> 8 );
-        ssl->out_msg[offset+1] = (unsigned char)( *olen      );
+        (void)mbedtls_platform_put_uint16_be( out, *olen );
         *olen += 2;
     }
 #endif
 
+cleanup:
+
 #if !defined(MBEDTLS_SSL_KEEP_PEER_CERTIFICATE)
     /* We don't need the peer's public key anymore. Free it. */
     mbedtls_pk_free( peer_pk );
-#endif /* !MBEDTLS_SSL_KEEP_PEER_CERTIFICATE */
-    return( 0 );
+#else
+    mbedtls_x509_crt_pk_release( ssl->session_negotiate->peer_cert );
+#endif /* MBEDTLS_SSL_KEEP_PEER_CERTIFICATE */
+
+    return( ret );
 }
 #endif /* MBEDTLS_KEY_EXCHANGE_RSA_ENABLED ||
           MBEDTLS_KEY_EXCHANGE_RSA_PSK_ENABLED */
@@ -2478,7 +2462,7 @@ static int ssl_parse_signature_algorithm( mbedtls_ssl_context *ssl,
     *pk_alg = MBEDTLS_PK_NONE;
 
     /* Only in TLS 1.2 */
-    if( ssl->minor_ver != MBEDTLS_SSL_MINOR_VERSION_3 )
+    if( mbedtls_ssl_get_minor_ver( ssl ) != MBEDTLS_SSL_MINOR_VERSION_3 )
     {
         return( 0 );
     }
@@ -2532,8 +2516,12 @@ static int ssl_parse_signature_algorithm( mbedtls_ssl_context *ssl,
 static int ssl_get_ecdh_params_from_cert( mbedtls_ssl_context *ssl )
 {
     int ret;
-    const mbedtls_ecp_keypair *peer_key;
     mbedtls_pk_context * peer_pk;
+
+    /* Acquire peer's PK context: In case we store peer's entire
+     * certificate, we extract the context from it. Otherwise,
+     * we can use a temporary copy we've made for the purpose of
+     * signature verification. */
 
 #if !defined(MBEDTLS_SSL_KEEP_PEER_CERTIFICATE)
     peer_pk = &ssl->handshake->peer_pubkey;
@@ -2544,150 +2532,232 @@ static int ssl_get_ecdh_params_from_cert( mbedtls_ssl_context *ssl )
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "should never happen" ) );
         return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
     }
-    peer_pk = &ssl->session_negotiate->peer_cert->pk;
+
+    ret = mbedtls_x509_crt_pk_acquire( ssl->session_negotiate->peer_cert,
+                                       &peer_pk );
+    if( ret != 0 )
+    {
+        MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_x509_crt_pk_acquire", ret );
+        return( ret );
+    }
 #endif /* MBEDTLS_SSL_KEEP_PEER_CERTIFICATE */
 
     if( ! mbedtls_pk_can_do( peer_pk, MBEDTLS_PK_ECKEY ) )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "server key not ECDH capable" ) );
-        return( MBEDTLS_ERR_SSL_PK_TYPE_MISMATCH );
+        ret = MBEDTLS_ERR_SSL_PK_TYPE_MISMATCH;
+        goto cleanup;
     }
 
-    peer_key = mbedtls_pk_ec( *peer_pk );
+    /* Extract ECDH parameters from peer's PK context. */
 
-    if( ( ret = mbedtls_ecdh_get_params( &ssl->handshake->ecdh_ctx, peer_key,
-                                 MBEDTLS_ECDH_THEIRS ) ) != 0 )
     {
-        MBEDTLS_SSL_DEBUG_RET( 1, ( "mbedtls_ecdh_get_params" ), ret );
-        return( ret );
+#if defined(MBEDTLS_USE_TINYCRYPT)
+        mbedtls_uecc_keypair *peer_key =
+            mbedtls_pk_uecc( *peer_pk );
+
+        mbedtls_platform_memcpy( ssl->handshake->ecdh_peerkey,
+                peer_key->public_key,
+                sizeof( ssl->handshake->ecdh_peerkey ) );
+#else /* MBEDTLS_USE_TINYCRYPT */
+        const mbedtls_ecp_keypair *peer_key;
+        peer_key = mbedtls_pk_ec( *peer_pk );
+
+        if( ( ret = mbedtls_ecdh_get_params( &ssl->handshake->ecdh_ctx, peer_key,
+                                             MBEDTLS_ECDH_THEIRS ) ) != 0 )
+        {
+            MBEDTLS_SSL_DEBUG_RET( 1, ( "mbedtls_ecdh_get_params" ), ret );
+            goto cleanup;
+        }
+
+        if( ssl_check_server_ecdh_params( ssl ) != 0 )
+        {
+            MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server certificate (ECDH curve)" ) );
+            ret = MBEDTLS_ERR_SSL_BAD_HS_CERTIFICATE;
+            goto cleanup;
+        }
+#endif /* MBEDTLS_USE_TINYCRYPT */
     }
 
-    if( ssl_check_server_ecdh_params( ssl ) != 0 )
-    {
-        MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server certificate (ECDH curve)" ) );
-        return( MBEDTLS_ERR_SSL_BAD_HS_CERTIFICATE );
-    }
+cleanup:
 
 #if !defined(MBEDTLS_SSL_KEEP_PEER_CERTIFICATE)
     /* We don't need the peer's public key anymore. Free it,
      * so that more RAM is available for upcoming expensive
      * operations like ECDHE. */
     mbedtls_pk_free( peer_pk );
-#endif /* !MBEDTLS_SSL_KEEP_PEER_CERTIFICATE */
+#else
+    mbedtls_x509_crt_pk_release( ssl->session_negotiate->peer_cert );
+#endif /* MBEDTLS_SSL_KEEP_PEER_CERTIFICATE */
 
     return( ret );
 }
 #endif /* MBEDTLS_KEY_EXCHANGE_ECDH_RSA_ENABLED) ||
           MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA_ENABLED */
 
-static int ssl_parse_server_key_exchange( mbedtls_ssl_context *ssl )
+/*
+ *
+ * STATE HANDLING: ServerKeyExchange
+ *
+ */
+
+/*
+ * Overview
+ */
+
+/* Main entry point; orchestrates the other functions. */
+static int ssl_process_in_server_key_exchange( mbedtls_ssl_context *ssl );
+
+/* Coordination:
+ * Check if a ServerKeyExchange message is expected, and skip if not.
+ * Returns a negative code on failure, or
+ * - SSL_SRV_KEY_EXCHANGE_SKIP
+ * - SSL_SRV_KEY_EXCHANGE_EXPECTED
+ * indicating if a ServerKeyExchange message is expected or not.
+ */
+#define SSL_SRV_KEY_EXCHANGE_SKIP      0
+#define SSL_SRV_KEY_EXCHANGE_EXPECTED  1
+static int ssl_in_server_key_exchange_coordinate( mbedtls_ssl_context *ssl );
+/* Preparation
+ * If applicable, prepare DH parameters from Server certificate. */
+static int ssl_in_server_key_exchange_prepare( mbedtls_ssl_context *ssl );
+/* Parse SrvKeyExchange message and store contents
+ * (PSK or DH parameters) in handshake structure. */
+static int ssl_in_server_key_exchange_parse( mbedtls_ssl_context *ssl,
+                                          unsigned char *buf,
+                                          size_t buflen );
+/* Update the handshake state */
+static int ssl_in_server_key_exchange_postprocess( mbedtls_ssl_context *ssl );
+
+/*
+ * Implementation
+ */
+
+static int ssl_in_server_key_exchange_prepare( mbedtls_ssl_context *ssl )
+{
+    mbedtls_ssl_ciphersuite_handle_t ciphersuite_info =
+        mbedtls_ssl_handshake_get_ciphersuite( ssl->handshake );
+    ((void) ciphersuite_info);
+
+    /* If applicable, extract static DH parameters from Server CRT. */
+
+#if defined(MBEDTLS_KEY_EXCHANGE_ECDH_RSA_ENABLED) || \
+    defined(MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA_ENABLED)
+    if( mbedtls_ssl_suite_get_key_exchange( ciphersuite_info ) ==
+        MBEDTLS_KEY_EXCHANGE_ECDH_RSA ||
+        mbedtls_ssl_suite_get_key_exchange( ciphersuite_info ) ==
+        MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA )
+    {
+        int ret;
+
+        if( ( ret = ssl_get_ecdh_params_from_cert( ssl ) ) != 0 )
+        {
+            MBEDTLS_SSL_DEBUG_RET( 1, "ssl_get_ecdh_params_from_cert", ret );
+            mbedtls_ssl_pend_fatal_alert( ssl,
+                                     MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
+            return( ret );
+        }
+    }
+#endif /* MBEDTLS_KEY_EXCHANGE_ECDH_RSA_ENABLED ||
+          MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA_ENABLED */
+
+    return( 0 );
+}
+
+static int ssl_in_server_key_exchange_coordinate( mbedtls_ssl_context *ssl )
 {
     int ret;
-    const mbedtls_ssl_ciphersuite_t *ciphersuite_info =
-        ssl->handshake->ciphersuite_info;
-    unsigned char *p = NULL, *end = NULL;
+    mbedtls_ssl_ciphersuite_handle_t ciphersuite_info =
+        mbedtls_ssl_handshake_get_ciphersuite( ssl->handshake );
 
-    MBEDTLS_SSL_DEBUG_MSG( 2, ( "=> parse server key exchange" ) );
+    /* The ServerKeyExchange message is not used for
+     * - RSA or
+     * - static ECDH
+     * ciphersuites.
+     * It MAY be used in PSK or RSA-PSK.
+     */
 
 #if defined(MBEDTLS_KEY_EXCHANGE_RSA_ENABLED)
-    if( ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_RSA )
+    if( mbedtls_ssl_suite_get_key_exchange( ciphersuite_info ) ==
+        MBEDTLS_KEY_EXCHANGE_RSA )
     {
-        MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= skip parse server key exchange" ) );
-        ssl->state++;
-        return( 0 );
+        return( SSL_SRV_KEY_EXCHANGE_SKIP );
     }
-    ((void) p);
-    ((void) end);
 #endif
 
 #if defined(MBEDTLS_KEY_EXCHANGE_ECDH_RSA_ENABLED) || \
     defined(MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA_ENABLED)
-    if( ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDH_RSA ||
-        ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA )
+    if( mbedtls_ssl_suite_get_key_exchange( ciphersuite_info ) ==
+        MBEDTLS_KEY_EXCHANGE_ECDH_RSA ||
+        mbedtls_ssl_suite_get_key_exchange( ciphersuite_info ) ==
+        MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA )
     {
-        if( ( ret = ssl_get_ecdh_params_from_cert( ssl ) ) != 0 )
-        {
-            MBEDTLS_SSL_DEBUG_RET( 1, "ssl_get_ecdh_params_from_cert", ret );
-            mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                            MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
-            return( ret );
-        }
-
-        MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= skip parse server key exchange" ) );
-        ssl->state++;
-        return( 0 );
+        return( SSL_SRV_KEY_EXCHANGE_SKIP );
     }
-    ((void) p);
-    ((void) end);
 #endif /* MBEDTLS_KEY_EXCHANGE_ECDH_RSA_ENABLED ||
           MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA_ENABLED */
 
-#if defined(MBEDTLS_SSL__ECP_RESTARTABLE)
-    if( ssl->handshake->ecrs_enabled &&
-        ssl->handshake->ecrs_state == ssl_ecrs_ske_start_processing )
-    {
-        goto start_processing;
-    }
-#endif
-
-    if( ( ret = mbedtls_ssl_read_record( ssl, 1 ) ) != 0 )
-    {
-        MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_read_record", ret );
-        return( ret );
-    }
-
-    if( ssl->in_msgtype != MBEDTLS_SSL_MSG_HANDSHAKE )
-    {
-        MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server key exchange message" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_UNEXPECTED_MESSAGE );
-        return( MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE );
-    }
-
     /*
      * ServerKeyExchange may be skipped with PSK and RSA-PSK when the server
-     * doesn't use a psk_identity_hint
+     * doesn't use a psk_identity_hint. Peek at next message to decide whether
+     * the ServerKeyExchange is being skipped or not.
      */
-    if( ssl->in_msg[0] != MBEDTLS_SSL_HS_SERVER_KEY_EXCHANGE )
+
+    if( mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_PSK ||
+        mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_RSA_PSK )
     {
-        if( ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_PSK ||
-            ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_RSA_PSK )
+        if( ( ret = mbedtls_ssl_read_record( ssl, 1 ) ) != 0 )
+        {
+            MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_read_record", ret );
+            return( ret );
+        }
+        ssl->keep_current_message = 1;
+
+        if( ssl->in_msgtype == MBEDTLS_SSL_MSG_HANDSHAKE &&
+            ssl->in_msg[0]  != MBEDTLS_SSL_HS_SERVER_KEY_EXCHANGE )
         {
             /* Current message is probably either
              * CertificateRequest or ServerHelloDone */
-            ssl->keep_current_message = 1;
-            goto exit;
+            return( SSL_SRV_KEY_EXCHANGE_SKIP );
         }
-
-        MBEDTLS_SSL_DEBUG_MSG( 1, ( "server key exchange message must "
-                                    "not be skipped" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_UNEXPECTED_MESSAGE );
-
-        return( MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE );
     }
 
-#if defined(MBEDTLS_SSL__ECP_RESTARTABLE)
-    if( ssl->handshake->ecrs_enabled )
-        ssl->handshake->ecrs_state = ssl_ecrs_ske_start_processing;
+    return( SSL_SRV_KEY_EXCHANGE_EXPECTED );
+}
 
-start_processing:
-#endif
-    p   = ssl->in_msg + mbedtls_ssl_hs_hdr_len( ssl );
-    end = ssl->in_msg + ssl->in_hslen;
-    MBEDTLS_SSL_DEBUG_BUF( 3,   "server key exchange", p, end - p );
+static int ssl_in_server_key_exchange_parse( mbedtls_ssl_context *ssl,
+                                          unsigned char *buf,
+                                          size_t buflen )
+{
+    int ret;
+    unsigned char *p;
+    unsigned char *end;
+
+    mbedtls_ssl_ciphersuite_handle_t ciphersuite_info =
+        mbedtls_ssl_handshake_get_ciphersuite( ssl->handshake );
+
+    p   = buf + mbedtls_ssl_hs_hdr_len( ssl );
+    end = buf + buflen;
+
+    MBEDTLS_SSL_DEBUG_BUF( 3, "server key exchange", p, end - p );
 
 #if defined(MBEDTLS_KEY_EXCHANGE__SOME__PSK_ENABLED)
-    if( ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_PSK ||
-        ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_RSA_PSK ||
-        ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_DHE_PSK ||
-        ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK )
+    if( mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_PSK                             ||
+        mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_RSA_PSK                         ||
+        mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_DHE_PSK                         ||
+        mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK )
     {
         if( ssl_parse_server_psk_hint( ssl, &p, end ) != 0 )
         {
             MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server key exchange message" ) );
-            mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                            MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER );
+            mbedtls_ssl_pend_fatal_alert( ssl,
+                               MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER );
             return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_KEY_EXCHANGE );
         }
     } /* FALLTROUGH */
@@ -2695,81 +2765,113 @@ start_processing:
 
 #if defined(MBEDTLS_KEY_EXCHANGE_PSK_ENABLED) ||                       \
     defined(MBEDTLS_KEY_EXCHANGE_RSA_PSK_ENABLED)
-    if( ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_PSK ||
-        ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_RSA_PSK )
+    if( mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_PSK                              ||
+        mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_RSA_PSK )
+    {
         ; /* nothing more to do */
+    }
     else
 #endif /* MBEDTLS_KEY_EXCHANGE_PSK_ENABLED ||
           MBEDTLS_KEY_EXCHANGE_RSA_PSK_ENABLED */
 #if defined(MBEDTLS_KEY_EXCHANGE_DHE_RSA_ENABLED) ||                       \
     defined(MBEDTLS_KEY_EXCHANGE_DHE_PSK_ENABLED)
-    if( ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_DHE_RSA ||
-        ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_DHE_PSK )
+    if( mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_DHE_RSA ||
+        mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_DHE_PSK )
     {
         if( ssl_parse_server_dh_params( ssl, &p, end ) != 0 )
         {
             MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server key exchange message" ) );
-            mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                            MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER );
+            mbedtls_ssl_pend_fatal_alert( ssl,
+                                   MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER );
             return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_KEY_EXCHANGE );
         }
     }
     else
 #endif /* MBEDTLS_KEY_EXCHANGE_DHE_RSA_ENABLED ||
           MBEDTLS_KEY_EXCHANGE_DHE_PSK_ENABLED */
-#if defined(MBEDTLS_USE_PSA_CRYPTO) &&                           \
-        ( defined(MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED) ||     \
-          defined(MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED) )
-    if( ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_RSA ||
-        ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA )
+#if defined(MBEDTLS_USE_TINYCRYPT)
+    if( mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_ECDHE_RSA                         ||
+        mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK                         ||
+        mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA )
     {
-        if( ssl_parse_server_ecdh_params_psa( ssl, &p, end ) != 0 )
+        static const unsigned char ecdh_group[] = {
+            MBEDTLS_SSL_EC_TLS_NAMED_CURVE,
+            0  /* high bits of secp256r1 TLS ID  */,
+            23 /* low bits of secp256r1 TLS ID   */,
+        };
+
+        /* Check for fixed ECDH parameter preamble. */
+        if( (size_t)( end - p ) < sizeof( ecdh_group ) )
         {
-            MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server key exchange message" ) );
-            mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                            MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER );
-            return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_KEY_EXCHANGE );
+            MBEDTLS_SSL_DEBUG_MSG( 1, ( "Bad server key exchange (too short)" ) );
+            return( MBEDTLS_ERR_SSL_HW_ACCEL_FAILED );
         }
+
+        if( mbedtls_platform_memcmp( p, ecdh_group, sizeof( ecdh_group ) ) != 0 )
+        {
+            MBEDTLS_SSL_DEBUG_MSG( 1, ( "Bad server key exchange (unexpected header)" ) );
+            return( MBEDTLS_ERR_SSL_HW_ACCEL_FAILED );
+        }
+        p += sizeof( ecdh_group );
+
+        /* Read server's key share. */
+        if( mbedtls_ssl_ecdh_read_peerkey( ssl, &p, end ) != 0 )
+            return( MBEDTLS_ERR_SSL_HW_ACCEL_FAILED );
     }
     else
-#endif /* MBEDTLS_USE_PSA_CRYPTO &&
-            ( MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED ||
-              MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED ) */
-#if defined(MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED) ||                     \
-    defined(MBEDTLS_KEY_EXCHANGE_ECDHE_PSK_ENABLED) ||                     \
-    defined(MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED)
-    if( ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_RSA ||
-        ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK ||
-        ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA )
+#endif /* MBEDTLS_USE_TINYCRYPT */
+#if defined(MBEDTLS_ECDH_C) &&                                          \
+    ( defined(MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED)   ||              \
+      defined(MBEDTLS_KEY_EXCHANGE_ECDHE_PSK_ENABLED)   ||              \
+      defined(MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED ) )
+    if( mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_ECDHE_RSA                         ||
+        mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK                         ||
+        mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA )
     {
         if( ssl_parse_server_ecdh_params( ssl, &p, end ) != 0 )
         {
             MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server key exchange message" ) );
-            mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                            MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER );
+            mbedtls_ssl_pend_fatal_alert( ssl,
+                                   MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER );
             return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_KEY_EXCHANGE );
         }
     }
     else
-#endif /* MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED ||
-          MBEDTLS_KEY_EXCHANGE_ECDHE_PSK_ENABLED ||
-          MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED */
+#endif /* MBEDTLS_ECDH_C &&
+          ( MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED ||
+            MBEDTLS_KEY_EXCHANGE_ECDHE_PSK_ENABLED ||
+            MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED ) */
 #if defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED)
-    if( ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_ECJPAKE )
+    if( mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_ECJPAKE )
     {
         ret = mbedtls_ecjpake_read_round_two( &ssl->handshake->ecjpake_ctx,
                                               p, end - p );
         if( ret != 0 )
         {
             MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ecjpake_read_round_two", ret );
-            mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                            MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER );
+            mbedtls_ssl_pend_fatal_alert( ssl,
+                                   MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER );
             return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_KEY_EXCHANGE );
         }
     }
     else
 #endif /* MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED */
     {
+        ((void) ret);
+        ((void) p);
+        ((void) end);
+        ((void) ciphersuite_info);
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "should never happen" ) );
         return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
     }
@@ -2791,22 +2893,22 @@ start_processing:
          * Handle the digitally-signed structure
          */
 #if defined(MBEDTLS_SSL_PROTO_TLS1_2)
-        if( ssl->minor_ver == MBEDTLS_SSL_MINOR_VERSION_3 )
+        if( mbedtls_ssl_get_minor_ver( ssl ) == MBEDTLS_SSL_MINOR_VERSION_3 )
         {
             if( ssl_parse_signature_algorithm( ssl, &p, end,
                                                &md_alg, &pk_alg ) != 0 )
             {
                 MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server key exchange message" ) );
-                mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                                MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER );
+                mbedtls_ssl_pend_fatal_alert( ssl,
+                                    MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER );
                 return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_KEY_EXCHANGE );
             }
 
             if( pk_alg != mbedtls_ssl_get_ciphersuite_sig_pk_alg( ciphersuite_info ) )
             {
                 MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server key exchange message" ) );
-                mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                                MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER );
+                mbedtls_ssl_pend_fatal_alert( ssl,
+                                     MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER );
                 return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_KEY_EXCHANGE );
             }
         }
@@ -2814,7 +2916,8 @@ start_processing:
 #endif /* MBEDTLS_SSL_PROTO_TLS1_2 */
 #if defined(MBEDTLS_SSL_PROTO_SSL3) || defined(MBEDTLS_SSL_PROTO_TLS1) || \
     defined(MBEDTLS_SSL_PROTO_TLS1_1)
-        if( ssl->minor_ver < MBEDTLS_SSL_MINOR_VERSION_3 )
+        if( mbedtls_ssl_ver_lt( mbedtls_ssl_get_minor_ver( ssl ),
+                                MBEDTLS_SSL_MINOR_VERSION_3 ) )
         {
             pk_alg = mbedtls_ssl_get_ciphersuite_sig_pk_alg( ciphersuite_info );
 
@@ -2836,18 +2939,19 @@ start_processing:
         if( p > end - 2 )
         {
             MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server key exchange message" ) );
-            mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                            MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
+            mbedtls_ssl_pend_fatal_alert( ssl,
+                                          MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
             return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_KEY_EXCHANGE );
         }
-        sig_len = ( p[0] << 8 ) | p[1];
+
+        sig_len = mbedtls_platform_get_uint16_be( p );
         p += 2;
 
         if( p != end - sig_len )
         {
             MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server key exchange message" ) );
-            mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                            MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
+            mbedtls_ssl_pend_fatal_alert( ssl,
+                                          MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
             return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_KEY_EXCHANGE );
         }
 
@@ -2898,7 +3002,14 @@ start_processing:
             MBEDTLS_SSL_DEBUG_MSG( 1, ( "should never happen" ) );
             return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
         }
-        peer_pk = &ssl->session_negotiate->peer_cert->pk;
+
+        ret = mbedtls_x509_crt_pk_acquire( ssl->session_negotiate->peer_cert,
+                                           &peer_pk );
+        if( ret != 0 )
+        {
+            MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_x509_crt_pk_acquire", ret );
+            return( ret );
+        }
 #endif /* MBEDTLS_SSL_KEEP_PEER_CERTIFICATE */
 
         /*
@@ -2907,8 +3018,11 @@ start_processing:
         if( !mbedtls_pk_can_do( peer_pk, pk_alg ) )
         {
             MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server key exchange message" ) );
-            mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                            MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
+            mbedtls_ssl_pend_fatal_alert( ssl,
+                                MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
+#if defined(MBEDTLS_SSL_KEEP_PEER_CERTIFICATE)
+            mbedtls_x509_crt_pk_release( ssl->session_negotiate->peer_cert );
+#endif /* MBEDTLS_SSL_KEEP_PEER_CERTIFICATE */
             return( MBEDTLS_ERR_SSL_PK_TYPE_MISMATCH );
         }
 
@@ -2923,13 +3037,18 @@ start_processing:
 #if defined(MBEDTLS_SSL__ECP_RESTARTABLE)
             if( ret != MBEDTLS_ERR_ECP_IN_PROGRESS )
 #endif
-                mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                                MBEDTLS_SSL_ALERT_MSG_DECRYPT_ERROR );
+            {
+                mbedtls_ssl_pend_fatal_alert( ssl,
+                                     MBEDTLS_SSL_ALERT_MSG_DECRYPT_ERROR );
+            }
             MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_pk_verify", ret );
 #if defined(MBEDTLS_SSL__ECP_RESTARTABLE)
             if( ret == MBEDTLS_ERR_ECP_IN_PROGRESS )
                 ret = MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS;
 #endif
+#if defined(MBEDTLS_SSL_KEEP_PEER_CERTIFICATE)
+            mbedtls_x509_crt_pk_release( ssl->session_negotiate->peer_cert );
+#endif /* MBEDTLS_SSL_KEEP_PEER_CERTIFICATE */
             return( ret );
         }
 
@@ -2938,23 +3057,86 @@ start_processing:
          * so that more RAM is available for upcoming expensive
          * operations like ECDHE. */
         mbedtls_pk_free( peer_pk );
-#endif /* !MBEDTLS_SSL_KEEP_PEER_CERTIFICATE */
+#else
+        mbedtls_x509_crt_pk_release( ssl->session_negotiate->peer_cert );
+#endif /* MBEDTLS_SSL_KEEP_PEER_CERTIFICATE */
     }
 #endif /* MBEDTLS_KEY_EXCHANGE__WITH_SERVER_SIGNATURE__ENABLED */
 
-exit:
-    ssl->state++;
+    return( 0 );
+}
+
+static int ssl_in_server_key_exchange_postprocess( mbedtls_ssl_context *ssl )
+{
+    ssl->state = MBEDTLS_SSL_CERTIFICATE_REQUEST;
+    return( 0 );
+}
+
+static int ssl_process_in_server_key_exchange( mbedtls_ssl_context *ssl )
+{
+    int ret;
+    MBEDTLS_SSL_DEBUG_MSG( 2, ( "=> parse server key exchange" ) );
+
+    /* Preparation:
+     * Potentially extract DH parameters from Server's certificate.
+     *
+     * Consider: Why don't we do this as post-processing after
+     *           the server certificate has been read?
+     */
+    MBEDTLS_SSL_CHK( ssl_in_server_key_exchange_prepare( ssl ) );
+
+    /* Coordination:
+     * Check if we expect a ServerKeyExchange */
+    MBEDTLS_SSL_CHK( ssl_in_server_key_exchange_coordinate( ssl ) );
+
+    if( ret == SSL_SRV_KEY_EXCHANGE_EXPECTED )
+    {
+        /* Reading step */
+        if( ( ret = mbedtls_ssl_read_record( ssl, 1 ) ) != 0 )
+        {
+            MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_read_record", ret );
+            return( ret );
+        }
+
+        if( ssl->in_msgtype != MBEDTLS_SSL_MSG_HANDSHAKE ||
+            ssl->in_msg[0]  != MBEDTLS_SSL_HS_SERVER_KEY_EXCHANGE )
+        {
+            MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server key exchange message" ) );
+            mbedtls_ssl_pend_fatal_alert( ssl,
+                                     MBEDTLS_SSL_ALERT_MSG_UNEXPECTED_MESSAGE );
+            ret = MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE;
+            goto cleanup;
+        }
+        else
+        {
+            MBEDTLS_SSL_CHK( ssl_in_server_key_exchange_parse( ssl, ssl->in_msg,
+                                                         ssl->in_hslen ) );
+        }
+    }
+    else if( ret == SSL_SRV_KEY_EXCHANGE_SKIP )
+    {
+        MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= skip parse server key exchange" ) );
+    }
+
+    /* Update state */
+    MBEDTLS_SSL_CHK( ssl_in_server_key_exchange_postprocess( ssl ) );
+
+cleanup:
+
+#if defined(MBEDTLS_SSL__ECP_RESTARTABLE)
+    if( ret == MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS )
+        ssl->keep_current_message = 1;
+#endif
 
     MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= parse server key exchange" ) );
-
-    return( 0 );
+    return( ret );
 }
 
 #if ! defined(MBEDTLS_KEY_EXCHANGE__CERT_REQ_ALLOWED__ENABLED)
 static int ssl_parse_certificate_request( mbedtls_ssl_context *ssl )
 {
-    const mbedtls_ssl_ciphersuite_t *ciphersuite_info =
-        ssl->handshake->ciphersuite_info;
+    mbedtls_ssl_ciphersuite_handle_t ciphersuite_info =
+        mbedtls_ssl_handshake_get_ciphersuite( ssl->handshake );
 
     MBEDTLS_SSL_DEBUG_MSG( 2, ( "=> parse certificate request" ) );
 
@@ -2975,8 +3157,8 @@ static int ssl_parse_certificate_request( mbedtls_ssl_context *ssl )
     unsigned char *buf;
     size_t n = 0;
     size_t cert_type_len = 0, dn_len = 0;
-    const mbedtls_ssl_ciphersuite_t *ciphersuite_info =
-        ssl->handshake->ciphersuite_info;
+    mbedtls_ssl_ciphersuite_handle_t ciphersuite_info =
+        mbedtls_ssl_handshake_get_ciphersuite( ssl->handshake );
 
     MBEDTLS_SSL_DEBUG_MSG( 2, ( "=> parse certificate request" ) );
 
@@ -2996,8 +3178,8 @@ static int ssl_parse_certificate_request( mbedtls_ssl_context *ssl )
     if( ssl->in_msgtype != MBEDTLS_SSL_MSG_HANDSHAKE )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad certificate request message" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_UNEXPECTED_MESSAGE );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                              MBEDTLS_SSL_ALERT_MSG_UNEXPECTED_MESSAGE );
         return( MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE );
     }
 
@@ -3044,8 +3226,8 @@ static int ssl_parse_certificate_request( mbedtls_ssl_context *ssl )
     if( ssl->in_hslen <= mbedtls_ssl_hs_hdr_len( ssl ) )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad certificate request message" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                               MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
         return( MBEDTLS_ERR_SSL_BAD_HS_CERTIFICATE_REQUEST );
     }
     cert_type_len = buf[mbedtls_ssl_hs_hdr_len( ssl )];
@@ -3064,17 +3246,16 @@ static int ssl_parse_certificate_request( mbedtls_ssl_context *ssl )
     if( ssl->in_hslen <= mbedtls_ssl_hs_hdr_len( ssl ) + 2 + n )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad certificate request message" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
         return( MBEDTLS_ERR_SSL_BAD_HS_CERTIFICATE_REQUEST );
     }
 
     /* supported_signature_algorithms */
 #if defined(MBEDTLS_SSL_PROTO_TLS1_2)
-    if( ssl->minor_ver == MBEDTLS_SSL_MINOR_VERSION_3 )
+    if( mbedtls_ssl_get_minor_ver( ssl ) == MBEDTLS_SSL_MINOR_VERSION_3 )
     {
-        size_t sig_alg_len = ( ( buf[mbedtls_ssl_hs_hdr_len( ssl ) + 1 + n] <<  8 )
-                             | ( buf[mbedtls_ssl_hs_hdr_len( ssl ) + 2 + n]       ) );
+        size_t sig_alg_len = mbedtls_platform_get_uint16_be( &buf[mbedtls_ssl_hs_hdr_len( ssl ) + 1 + n] );
 #if defined(MBEDTLS_DEBUG_C)
         unsigned char* sig_alg;
         size_t i;
@@ -3095,8 +3276,8 @@ static int ssl_parse_certificate_request( mbedtls_ssl_context *ssl )
         if( ssl->in_hslen <= mbedtls_ssl_hs_hdr_len( ssl ) + 3 + n + sig_alg_len )
         {
             MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad certificate request message" ) );
-            mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                            MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
+            mbedtls_ssl_pend_fatal_alert( ssl,
+                                          MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
             return( MBEDTLS_ERR_SSL_BAD_HS_CERTIFICATE_REQUEST );
         }
 
@@ -3114,15 +3295,14 @@ static int ssl_parse_certificate_request( mbedtls_ssl_context *ssl )
 #endif /* MBEDTLS_SSL_PROTO_TLS1_2 */
 
     /* certificate_authorities */
-    dn_len = ( ( buf[mbedtls_ssl_hs_hdr_len( ssl ) + 1 + n] <<  8 )
-             | ( buf[mbedtls_ssl_hs_hdr_len( ssl ) + 2 + n]       ) );
+    dn_len = mbedtls_platform_get_uint16_be( &buf[mbedtls_ssl_hs_hdr_len( ssl ) + 1 + n] );
 
     n += dn_len;
     if( ssl->in_hslen != mbedtls_ssl_hs_hdr_len( ssl ) + 3 + n )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad certificate request message" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
         return( MBEDTLS_ERR_SSL_BAD_HS_CERTIFICATE_REQUEST );
     }
 
@@ -3155,15 +3335,15 @@ static int ssl_parse_server_hello_done( mbedtls_ssl_context *ssl )
         ssl->in_msg[0] != MBEDTLS_SSL_HS_SERVER_HELLO_DONE )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad server hello done message" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO_DONE );
     }
 
     ssl->state++;
 
 #if defined(MBEDTLS_SSL_PROTO_DTLS)
-    if( ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_DATAGRAM )
+    if( MBEDTLS_SSL_TRANSPORT_IS_DTLS( ssl->conf->transport ) )
         mbedtls_ssl_recv_flight_completed( ssl );
 #endif
 
@@ -3172,174 +3352,266 @@ static int ssl_parse_server_hello_done( mbedtls_ssl_context *ssl )
     return( 0 );
 }
 
-static int ssl_write_client_key_exchange( mbedtls_ssl_context *ssl )
+/*
+ *
+ * STATE HANDLING: Client Key Exchange
+ *
+ */
+
+/*
+ * Overview
+ */
+
+/* Main entry point; orchestrates the other functions */
+static int ssl_process_out_client_key_exchange( mbedtls_ssl_context *ssl );
+
+/* Preparation
+ * - For ECDH: Generate client params and derive premaster secret
+ * - For RSA-suites: Encrypt PMS
+ * - For ECJPAKE: Do Round 2
+ */
+static int ssl_out_client_key_exchange_prepare( mbedtls_ssl_context *ssl );
+static int ssl_out_client_key_exchange_write( mbedtls_ssl_context *ssl,
+                                          unsigned char *buf,
+                                          size_t buflen,
+                                          size_t *olen );
+static int ssl_out_client_key_exchange_postprocess( mbedtls_ssl_context *ssl );
+
+/*
+ * Implementation
+ */
+
+static int ssl_process_out_client_key_exchange( mbedtls_ssl_context *ssl )
+{
+    int ret = 0;
+    MBEDTLS_SSL_DEBUG_MSG( 2, ( "=> process client key exchange" ) );
+
+#if defined(MBEDTLS_SSL__ECP_RESTARTABLE)
+    if( ssl->handshake->ecrs_state == ssl_ecrs_cke_ecdh_calc_secret )
+        goto cli_key_exchange_postprocess;
+
+    if( ssl->handshake->ecrs_enabled )
+        mbedtls_ecdh_enable_restart( &ssl->handshake->ecdh_ctx );
+#endif
+
+    MBEDTLS_SSL_CHK( ssl_out_client_key_exchange_prepare( ssl ) );
+
+     /* Prepare CertificateVerify message in output buffer. */
+    MBEDTLS_SSL_CHK( ssl_out_client_key_exchange_write( ssl, ssl->out_msg,
+                                                 MBEDTLS_SSL_MAX_CONTENT_LEN,
+                                                 &ssl->out_msglen ) );
+
+    ssl->out_msgtype = MBEDTLS_SSL_MSG_HANDSHAKE;
+    ssl->out_msg[0]  = MBEDTLS_SSL_HS_CLIENT_KEY_EXCHANGE;
+
+    /* Calculate secrets and update state */
+#if defined(MBEDTLS_SSL__ECP_RESTARTABLE)
+    if( ssl->handshake->ecrs_enabled )
+        ssl->handshake->ecrs_state = ssl_ecrs_cke_ecdh_calc_secret;
+
+cli_key_exchange_postprocess:
+#endif
+
+    ret = ssl_out_client_key_exchange_postprocess( ssl );
+#if defined(MBEDTLS_SSL__ECP_RESTARTABLE)
+    if( ret == MBEDTLS_ERR_ECP_IN_PROGRESS )
+        ret = MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS;
+#endif /* MBEDTLS_SSL__ECP_RESTARTABLE */
+    MBEDTLS_SSL_CHK( ret );
+
+    /* Dispatch message */
+
+    MBEDTLS_SSL_CHK( mbedtls_ssl_write_handshake_msg( ssl ) );
+
+    /* NOTE: For the new messaging layer, the postprocessing step
+     *       might come after the dispatching step if the latter
+     *       doesn't send the message immediately.
+     *       At the moment, we must do the postprocessing
+     *       prior to the dispatching because if the latter
+     *       returns WANT_WRITE, we want the handshake state
+     *       to be updated in order to not enter
+     *       this function again on retry. */
+
+cleanup:
+
+    MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= process client key exchange" ) );
+    return( ret );
+}
+
+
+
+static int ssl_out_client_key_exchange_prepare( mbedtls_ssl_context *ssl )
+{
+    int ret = 0;
+    mbedtls_ssl_ciphersuite_handle_t ciphersuite_info =
+        mbedtls_ssl_handshake_get_ciphersuite( ssl->handshake );
+
+    ((void) ret);
+    ((void) ciphersuite_info);
+
+    /* TODO: The current API for DH and ECDH does not allow
+     * to separate public key generation from public key export.
+     *
+     * Ideally, we would like to pick the private (EC)DH keys
+     * in this preparation step, exporting the corresponding
+     * public key in the writing step only.
+     *
+     * The necessary extension of the (EC)DH API is being
+     * considered, but until then we perform the public
+     * generation + export in the writing step.
+     *
+     */
+
+#if defined(MBEDTLS_KEY_EXCHANGE_RSA_PSK_ENABLED)
+    if( mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_RSA_PSK )
+    {
+        /* For RSA-PSK, the premaster secret is composed of
+         * - Length tag with value 48, encoded as a uint16
+         * - 2 bytes indicating the TLS version
+         * - 46 randomly chosen bytes
+         * - the chosen PSK.
+         * The following call takes care of all but the PSK. */
+        ret = ssl_rsa_generate_partial_pms( ssl, ssl->handshake->premaster,
+                                            1 /* Add length tag */ );
+        if( ret != 0 )
+            return( ret );
+    }
+#endif /* MBEDTLS_KEY_EXCHANGE_RSA_PSK_ENABLED */
+
+#if defined(MBEDTLS_KEY_EXCHANGE_RSA_ENABLED)
+    if( mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_RSA )
+    {
+        /* For RSA, the premaster secret is composed of
+         * - 2 bytes indicating the TLS version
+         * - 46 randomly chosen bytes
+         * which the following call generates. */
+        ret = ssl_rsa_generate_partial_pms( ssl, ssl->handshake->premaster,
+                                            0 /* Omit length tag */ );
+        if( ret != 0 )
+            return( ret );
+    }
+#endif /* MBEDTLS_KEY_EXCHANGE_RSA_ENABLED */
+
+    return( 0 );
+}
+
+/* Warning: Despite accepting a length argument, this function is currently
+ * still lacking some bounds checks and assumes that `buf` has length
+ * `MBEDTLS_SSL_OUT_CONTENT_LEN`. Eventually, it should be rewritten to work
+ * with any buffer + length pair, returning MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL
+ * on insufficient writing space. */
+static int ssl_out_client_key_exchange_write( mbedtls_ssl_context *ssl,
+                                          unsigned char *buf,
+                                          size_t buflen,
+                                          size_t *olen )
 {
     int ret;
+    unsigned char *p, *end;
+    size_t n;
+    mbedtls_ssl_ciphersuite_handle_t ciphersuite_info =
+        mbedtls_ssl_handshake_get_ciphersuite( ssl->handshake );
 
-    size_t header_len;
-    size_t content_len;
-    const mbedtls_ssl_ciphersuite_t *ciphersuite_info =
-        ssl->handshake->ciphersuite_info;
+    /* NOTE: This function will generate different messages
+     * when it's called multiple times, because it currently
+     * includes private/public key generation in case of
+     * (EC)DH ciphersuites.
+     *
+     * It is therefore not suitable to be registered as a callback
+     * for retransmission, if such get introduced at some point.
+     *
+     * Also see the documentation of ssl_out_client_key_exchange_prepare().
+     */
 
-    MBEDTLS_SSL_DEBUG_MSG( 2, ( "=> write client key exchange" ) );
+    p   = buf + 4;
+    end = buf + buflen;
 
 #if defined(MBEDTLS_KEY_EXCHANGE_DHE_RSA_ENABLED)
-    if( ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_DHE_RSA )
+    if( mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_DHE_RSA )
     {
         /*
          * DHM key exchange -- send G^X mod P
          */
-        content_len = ssl->handshake->dhm_ctx.len;
+        n = ssl->handshake->dhm_ctx.len;
+        if( (size_t)( end - p ) < n + 2 )
+            return( MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL );
 
-        ssl->out_msg[4] = (unsigned char)( content_len >> 8 );
-        ssl->out_msg[5] = (unsigned char)( content_len      );
-        header_len = 6;
+        p = mbedtls_platform_put_uint16_be( p, n );
 
         ret = mbedtls_dhm_make_public( &ssl->handshake->dhm_ctx,
                            (int) mbedtls_mpi_size( &ssl->handshake->dhm_ctx.P ),
-                           &ssl->out_msg[header_len], content_len,
-                           ssl->conf->f_rng, ssl->conf->p_rng );
+                           p, n, mbedtls_ssl_conf_get_frng( ssl->conf ),
+                           mbedtls_ssl_conf_get_prng( ssl->conf ) );
         if( ret != 0 )
         {
             MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_dhm_make_public", ret );
             return( ret );
         }
-
         MBEDTLS_SSL_DEBUG_MPI( 3, "DHM: X ", &ssl->handshake->dhm_ctx.X  );
         MBEDTLS_SSL_DEBUG_MPI( 3, "DHM: GX", &ssl->handshake->dhm_ctx.GX );
 
-        if( ( ret = mbedtls_dhm_calc_secret( &ssl->handshake->dhm_ctx,
-                                   ssl->handshake->premaster,
-                                   MBEDTLS_PREMASTER_SIZE,
-                                   &ssl->handshake->pmslen,
-                                   ssl->conf->f_rng, ssl->conf->p_rng ) ) != 0 )
-        {
-            MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_dhm_calc_secret", ret );
-            return( ret );
-        }
-
-        MBEDTLS_SSL_DEBUG_MPI( 3, "DHM: K ", &ssl->handshake->dhm_ctx.K  );
+        p += n;
     }
     else
 #endif /* MBEDTLS_KEY_EXCHANGE_DHE_RSA_ENABLED */
-#if defined(MBEDTLS_USE_PSA_CRYPTO) &&                           \
-        ( defined(MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED) ||     \
-          defined(MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED) )
-    if( ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_RSA ||
-        ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA )
+#if defined(MBEDTLS_USE_TINYCRYPT)
+    if( mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_ECDHE_RSA ||
+        mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA ||
+        mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_ECDH_RSA ||
+        mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA )
+
     {
-        psa_status_t status;
-        psa_key_attributes_t key_attributes;
+        const struct uECC_Curve_t * uecc_curve = uECC_secp256r1();
+        ((void) n);
+        ((void) ret);
 
-        mbedtls_ssl_handshake_params *handshake = ssl->handshake;
+        if( (size_t)( end - p ) < 2 * NUM_ECC_BYTES + 2 )
+            return( MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL );
 
-        unsigned char own_pubkey[MBEDTLS_PSA_MAX_EC_PUBKEY_LENGTH];
-        size_t own_pubkey_len;
-        unsigned char *own_pubkey_ecpoint;
-        size_t own_pubkey_ecpoint_len;
+        *p++ = 2 * NUM_ECC_BYTES + 1;
+        *p++ = 0x04; /* uncompressed point presentation */
 
-        header_len = 4;
-
-        MBEDTLS_SSL_DEBUG_MSG( 1, ( "Perform PSA-based ECDH computation." ) );
-
-        /*
-         * Generate EC private key for ECDHE exchange.
-         */
-
-        /* The master secret is obtained from the shared ECDH secret by
-         * applying the TLS 1.2 PRF with a specific salt and label. While
-         * the PSA Crypto API encourages combining key agreement schemes
-         * such as ECDH with fixed KDFs such as TLS 1.2 PRF, it does not
-         * yet support the provisioning of salt + label to the KDF.
-         * For the time being, we therefore need to split the computation
-         * of the ECDH secret and the application of the TLS 1.2 PRF. */
-        key_attributes = psa_key_attributes_init();
-        psa_set_key_usage_flags( &key_attributes, PSA_KEY_USAGE_DERIVE );
-        psa_set_key_algorithm( &key_attributes, PSA_ALG_ECDH );
-        psa_set_key_type( &key_attributes,
-                          PSA_KEY_TYPE_ECC_KEY_PAIR( handshake->ecdh_psa_curve )
-                        );
-        psa_set_key_bits( &key_attributes,
-                          PSA_ECC_CURVE_BITS( handshake->ecdh_psa_curve ) );
-
-        /* Generate ECDH private key. */
-        status = psa_generate_key( &key_attributes,
-                                   &handshake->ecdh_psa_privkey );
-        if( status != PSA_SUCCESS )
-            return( MBEDTLS_ERR_SSL_HW_ACCEL_FAILED );
-
-        /* Export the public part of the ECDH private key from PSA
-         * and convert it to ECPoint format used in ClientKeyExchange. */
-        status = psa_export_public_key( handshake->ecdh_psa_privkey,
-                                        own_pubkey, sizeof( own_pubkey ),
-                                        &own_pubkey_len );
-        if( status != PSA_SUCCESS )
-            return( MBEDTLS_ERR_SSL_HW_ACCEL_FAILED );
-
-        if( mbedtls_psa_tls_psa_ec_to_ecpoint( own_pubkey,
-                                               own_pubkey_len,
-                                               &own_pubkey_ecpoint,
-                                               &own_pubkey_ecpoint_len ) != 0 )
+        if( !uECC_make_key( p, ssl->handshake->ecdh_privkey,
+                            uecc_curve ) )
         {
             return( MBEDTLS_ERR_SSL_HW_ACCEL_FAILED );
         }
-
-        /* Copy ECPoint structure to outgoing message buffer. */
-        ssl->out_msg[header_len] = (unsigned char) own_pubkey_ecpoint_len;
-        memcpy( ssl->out_msg + header_len + 1,
-                own_pubkey_ecpoint, own_pubkey_ecpoint_len );
-        content_len = own_pubkey_ecpoint_len + 1;
-
-        /* The ECDH secret is the premaster secret used for key derivation. */
-
-        /* Compute ECDH shared secret. */
-        status = psa_raw_key_agreement( PSA_ALG_ECDH,
-                                        handshake->ecdh_psa_privkey,
-                                        handshake->ecdh_psa_peerkey,
-                                        handshake->ecdh_psa_peerkey_len,
-                                        ssl->handshake->premaster,
-                                        sizeof( ssl->handshake->premaster ),
-                                        &ssl->handshake->pmslen );
-        if( status != PSA_SUCCESS )
-            return( MBEDTLS_ERR_SSL_HW_ACCEL_FAILED );
-
-        status = psa_destroy_key( handshake->ecdh_psa_privkey );
-        if( status != PSA_SUCCESS )
-            return( MBEDTLS_ERR_SSL_HW_ACCEL_FAILED );
-        handshake->ecdh_psa_privkey = 0;
+        p += 2 * NUM_ECC_BYTES;
     }
     else
-#endif /* MBEDTLS_USE_PSA_CRYPTO &&
-            ( MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED ||
-              MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED ) */
-#if defined(MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED) ||                     \
-    defined(MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED) ||                   \
-    defined(MBEDTLS_KEY_EXCHANGE_ECDH_RSA_ENABLED) ||                      \
-    defined(MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA_ENABLED)
-    if( ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_RSA ||
-        ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA ||
-        ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDH_RSA ||
-        ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA )
+#endif /* MBEDTLS_USE_TINYCRYPT */
+#if defined(MBEDTLS_ECDH_C) &&                                          \
+        ( defined(MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED)   ||          \
+          defined(MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED) ||          \
+          defined(MBEDTLS_KEY_EXCHANGE_ECDH_RSA_ENABLED)    ||          \
+          defined(MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA_ENABLED) )
+    if( mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_ECDHE_RSA ||
+        mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA ||
+        mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_ECDH_RSA ||
+        mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA )
     {
         /*
-         * ECDH key exchange -- send client public value
+         * ECDH key exchange -- generate and send client public value
          */
-        header_len = 4;
 
-#if defined(MBEDTLS_SSL__ECP_RESTARTABLE)
-        if( ssl->handshake->ecrs_enabled )
-        {
-            if( ssl->handshake->ecrs_state == ssl_ecrs_cke_ecdh_calc_secret )
-                goto ecdh_calc_secret;
-
-            mbedtls_ecdh_enable_restart( &ssl->handshake->ecdh_ctx );
-        }
-#endif
-
+        /* NOTE: If we ever switch the ECDH stack/API to allow
+         * independent key generation and export, we should have
+         * generated our key share in the preparation step, and
+         * we'd only do the export here. */
         ret = mbedtls_ecdh_make_public( &ssl->handshake->ecdh_ctx,
-                                &content_len,
-                                &ssl->out_msg[header_len], 1000,
-                                ssl->conf->f_rng, ssl->conf->p_rng );
+                                &n, p, end - p,
+                                mbedtls_ssl_conf_get_frng( ssl->conf ),
+                                mbedtls_ssl_conf_get_prng( ssl->conf ) );
         if( ret != 0 )
         {
             MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ecdh_make_public", ret );
@@ -3353,155 +3625,132 @@ static int ssl_write_client_key_exchange( mbedtls_ssl_context *ssl )
         MBEDTLS_SSL_DEBUG_ECDH( 3, &ssl->handshake->ecdh_ctx,
                                 MBEDTLS_DEBUG_ECDH_Q );
 
-#if defined(MBEDTLS_SSL__ECP_RESTARTABLE)
-        if( ssl->handshake->ecrs_enabled )
-        {
-            ssl->handshake->ecrs_n = content_len;
-            ssl->handshake->ecrs_state = ssl_ecrs_cke_ecdh_calc_secret;
-        }
-
-ecdh_calc_secret:
-        if( ssl->handshake->ecrs_enabled )
-            content_len = ssl->handshake->ecrs_n;
-#endif
-        if( ( ret = mbedtls_ecdh_calc_secret( &ssl->handshake->ecdh_ctx,
-                                   &ssl->handshake->pmslen,
-                                   ssl->handshake->premaster,
-                                   MBEDTLS_MPI_MAX_SIZE,
-                                   ssl->conf->f_rng, ssl->conf->p_rng ) ) != 0 )
-        {
-            MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ecdh_calc_secret", ret );
-#if defined(MBEDTLS_SSL__ECP_RESTARTABLE)
-            if( ret == MBEDTLS_ERR_ECP_IN_PROGRESS )
-                ret = MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS;
-#endif
-            return( ret );
-        }
-
-        MBEDTLS_SSL_DEBUG_ECDH( 3, &ssl->handshake->ecdh_ctx,
-                                MBEDTLS_DEBUG_ECDH_Z );
+        p += n;
     }
     else
-#endif /* MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED ||
-          MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED ||
-          MBEDTLS_KEY_EXCHANGE_ECDH_RSA_ENABLED ||
-          MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA_ENABLED */
+#endif /* MBEDTLS_ECDH_C && (
+          ( MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED   ||
+            MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED ||
+            MBEDTLS_KEY_EXCHANGE_ECDH_RSA_ENABLED    ||
+            MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA_ENABLED  ) */
 #if defined(MBEDTLS_KEY_EXCHANGE__SOME__PSK_ENABLED)
     if( mbedtls_ssl_ciphersuite_uses_psk( ciphersuite_info ) )
     {
         /*
          * opaque psk_identity<0..2^16-1>;
          */
-        if( ssl_conf_has_static_psk( ssl->conf ) == 0 )
+        if( ssl->conf->psk == NULL || ssl->conf->psk_identity == NULL )
         {
-            /* We don't offer PSK suites if we don't have a PSK,
-             * and we check that the server's choice is among the
-             * ciphersuites we offered, so this should never happen. */
-            return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
+            MBEDTLS_SSL_DEBUG_MSG( 1, ( "got no private key for PSK" ) );
+            return( MBEDTLS_ERR_SSL_PRIVATE_KEY_REQUIRED );
         }
 
-        header_len = 4;
-        content_len = ssl->conf->psk_identity_len;
-
-        if( header_len + 2 + content_len > MBEDTLS_SSL_OUT_CONTENT_LEN )
+        n = ssl->conf->psk_identity_len;
+        if( buflen < n + 2 )
         {
             MBEDTLS_SSL_DEBUG_MSG( 1, ( "psk identity too long or "
                                         "SSL buffer too short" ) );
             return( MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL );
         }
 
-        ssl->out_msg[header_len++] = (unsigned char)( content_len >> 8 );
-        ssl->out_msg[header_len++] = (unsigned char)( content_len      );
+        p = mbedtls_platform_put_uint16_be( p, n );
 
-        memcpy( ssl->out_msg + header_len,
-                ssl->conf->psk_identity,
-                ssl->conf->psk_identity_len );
-        header_len += ssl->conf->psk_identity_len;
+        mbedtls_platform_memcpy( p, ssl->conf->psk_identity, n );
+        p += ssl->conf->psk_identity_len;
 
 #if defined(MBEDTLS_KEY_EXCHANGE_PSK_ENABLED)
-        if( ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_PSK )
+        if( mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+            == MBEDTLS_KEY_EXCHANGE_PSK )
         {
-            content_len = 0;
+            ((void) ret);
+            ((void) end);
         }
         else
 #endif
 #if defined(MBEDTLS_KEY_EXCHANGE_RSA_PSK_ENABLED)
-        if( ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_RSA_PSK )
+        if( mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+            == MBEDTLS_KEY_EXCHANGE_RSA_PSK )
         {
-#if defined(MBEDTLS_USE_PSA_CRYPTO)
-            /* Opaque PSKs are currently only supported for PSK-only suites. */
-            if( ssl_conf_has_static_raw_psk( ssl->conf ) == 0 )
-                return( MBEDTLS_ERR_SSL_FEATURE_UNAVAILABLE );
-#endif /* MBEDTLS_USE_PSA_CRYPTO */
-
-            if( ( ret = ssl_write_encrypted_pms( ssl, header_len,
-                                                 &content_len, 2 ) ) != 0 )
+            if( ( ret = ssl_rsa_encrypt_partial_pms( ssl,
+                                                ssl->handshake->premaster + 2,
+                                                p, end - p, &n ) ) != 0 )
                 return( ret );
+            p += n;
         }
         else
 #endif
 #if defined(MBEDTLS_KEY_EXCHANGE_DHE_PSK_ENABLED)
-        if( ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_DHE_PSK )
+        if( mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+            == MBEDTLS_KEY_EXCHANGE_DHE_PSK )
         {
-#if defined(MBEDTLS_USE_PSA_CRYPTO)
-            /* Opaque PSKs are currently only supported for PSK-only suites. */
-            if( ssl_conf_has_static_raw_psk( ssl->conf ) == 0 )
-                return( MBEDTLS_ERR_SSL_FEATURE_UNAVAILABLE );
-#endif /* MBEDTLS_USE_PSA_CRYPTO */
-
             /*
              * ClientDiffieHellmanPublic public (DHM send G^X mod P)
              */
-            content_len = ssl->handshake->dhm_ctx.len;
+            ((void) end);
 
-            if( header_len + 2 + content_len >
-                MBEDTLS_SSL_OUT_CONTENT_LEN )
+            n = ssl->handshake->dhm_ctx.len;
+
+            if( buflen < n + 2 )
             {
                 MBEDTLS_SSL_DEBUG_MSG( 1, ( "psk identity or DHM size too long"
                                             " or SSL buffer too short" ) );
                 return( MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL );
             }
 
-            ssl->out_msg[header_len++] = (unsigned char)( content_len >> 8 );
-            ssl->out_msg[header_len++] = (unsigned char)( content_len      );
+            p = mbedtls_platform_put_uint16_be( p, n );
 
             ret = mbedtls_dhm_make_public( &ssl->handshake->dhm_ctx,
-                    (int) mbedtls_mpi_size( &ssl->handshake->dhm_ctx.P ),
-                    &ssl->out_msg[header_len], content_len,
-                    ssl->conf->f_rng, ssl->conf->p_rng );
+                           (int) mbedtls_mpi_size( &ssl->handshake->dhm_ctx.P ),
+                           p, n, mbedtls_ssl_conf_get_frng( ssl->conf ),
+                           mbedtls_ssl_conf_get_prng( ssl->conf ) );
             if( ret != 0 )
             {
                 MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_dhm_make_public", ret );
                 return( ret );
             }
+
+            p += n;
         }
         else
 #endif /* MBEDTLS_KEY_EXCHANGE_DHE_PSK_ENABLED */
 #if defined(MBEDTLS_KEY_EXCHANGE_ECDHE_PSK_ENABLED)
-        if( ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK )
+        if( mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+            == MBEDTLS_KEY_EXCHANGE_ECDHE_PSK )
         {
-#if defined(MBEDTLS_USE_PSA_CRYPTO)
-            /* Opaque PSKs are currently only supported for PSK-only suites. */
-            if( ssl_conf_has_static_raw_psk( ssl->conf ) == 0 )
-                return( MBEDTLS_ERR_SSL_FEATURE_UNAVAILABLE );
-#endif /* MBEDTLS_USE_PSA_CRYPTO */
+#if defined(MBEDTLS_USE_TINYCRYPT)
+            const struct uECC_Curve_t * uecc_curve = uECC_secp256r1();
+            ((void) n);
+            ((void) ret);
 
+            if( (size_t)( end - p ) < 2 * NUM_ECC_BYTES + 2 )
+                return( MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL );
+
+            *p++ = 2 * NUM_ECC_BYTES + 1;
+            *p++ = 0x04; /* uncompressed point presentation */
+
+            if( !uECC_make_key( p, ssl->handshake->ecdh_privkey,
+                                uecc_curve ) )
+            {
+                return( MBEDTLS_ERR_SSL_HW_ACCEL_FAILED );
+            }
+            p += 2 * NUM_ECC_BYTES;
+#else /* MBEDTLS_USE_TINYCRYPT */
             /*
              * ClientECDiffieHellmanPublic public;
              */
-            ret = mbedtls_ecdh_make_public( &ssl->handshake->ecdh_ctx,
-                    &content_len,
-                    &ssl->out_msg[header_len],
-                    MBEDTLS_SSL_OUT_CONTENT_LEN - header_len,
-                    ssl->conf->f_rng, ssl->conf->p_rng );
+            ret = mbedtls_ecdh_make_public( &ssl->handshake->ecdh_ctx, &n,
+                                p, buflen,
+                                mbedtls_ssl_conf_get_frng( ssl->conf ),
+                                mbedtls_ssl_conf_get_prng( ssl->conf ) );
             if( ret != 0 )
             {
                 MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ecdh_make_public", ret );
                 return( ret );
             }
+            MBEDTLS_SSL_DEBUG_ECP( 3, "ECDH: Q", &ssl->handshake->ecdh_ctx.Q );
 
-            MBEDTLS_SSL_DEBUG_ECDH( 3, &ssl->handshake->ecdh_ctx,
-                                    MBEDTLS_DEBUG_ECDH_Q );
+            p += n;
+#endif /* MBEDTLS_USE_TINYCRYPT */
         }
         else
 #endif /* MBEDTLS_KEY_EXCHANGE_ECDHE_PSK_ENABLED */
@@ -3509,61 +3758,34 @@ ecdh_calc_secret:
             MBEDTLS_SSL_DEBUG_MSG( 1, ( "should never happen" ) );
             return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
         }
-
-#if defined(MBEDTLS_USE_PSA_CRYPTO) &&          \
-    defined(MBEDTLS_KEY_EXCHANGE_PSK_ENABLED)
-        if( ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_PSK &&
-            ssl->minor_ver == MBEDTLS_SSL_MINOR_VERSION_3 &&
-            ssl_conf_has_static_raw_psk( ssl->conf ) == 0 )
-        {
-            MBEDTLS_SSL_DEBUG_MSG( 1, ( "skip PMS generation for opaque PSK" ) );
-        }
-        else
-#endif /* MBEDTLS_USE_PSA_CRYPTO &&
-          MBEDTLS_KEY_EXCHANGE_PSK_ENABLED */
-        if( ( ret = mbedtls_ssl_psk_derive_premaster( ssl,
-                        ciphersuite_info->key_exchange ) ) != 0 )
-        {
-            MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_psk_derive_premaster", ret );
-            return( ret );
-        }
     }
     else
 #endif /* MBEDTLS_KEY_EXCHANGE__SOME__PSK_ENABLED */
 #if defined(MBEDTLS_KEY_EXCHANGE_RSA_ENABLED)
-    if( ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_RSA )
+    if( mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_RSA )
     {
-        header_len = 4;
-        if( ( ret = ssl_write_encrypted_pms( ssl, header_len,
-                                             &content_len, 0 ) ) != 0 )
+        if( ( ret = ssl_rsa_encrypt_partial_pms( ssl, ssl->handshake->premaster,
+                                                 p, end - p, &n ) ) != 0 )
             return( ret );
+        p += n;
     }
     else
 #endif /* MBEDTLS_KEY_EXCHANGE_RSA_ENABLED */
 #if defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED)
-    if( ciphersuite_info->key_exchange == MBEDTLS_KEY_EXCHANGE_ECJPAKE )
+    if( mbedtls_ssl_suite_get_key_exchange( ciphersuite_info )
+        == MBEDTLS_KEY_EXCHANGE_ECJPAKE )
     {
-        header_len = 4;
-
         ret = mbedtls_ecjpake_write_round_two( &ssl->handshake->ecjpake_ctx,
-                ssl->out_msg + header_len,
-                MBEDTLS_SSL_OUT_CONTENT_LEN - header_len,
-                &content_len,
-                ssl->conf->f_rng, ssl->conf->p_rng );
+                          p, end - p, &n,
+                          mbedtls_ssl_conf_get_frng( ssl->conf ),
+                          mbedtls_ssl_conf_get_prng( ssl->conf ) );
         if( ret != 0 )
         {
             MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ecjpake_write_round_two", ret );
             return( ret );
         }
-
-        ret = mbedtls_ecjpake_derive_secret( &ssl->handshake->ecjpake_ctx,
-                ssl->handshake->premaster, 32, &ssl->handshake->pmslen,
-                ssl->conf->f_rng, ssl->conf->p_rng );
-        if( ret != 0 )
-        {
-            MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ecjpake_derive_secret", ret );
-            return( ret );
-        }
+        p += n;
     }
     else
 #endif /* MBEDTLS_KEY_EXCHANGE_RSA_ENABLED */
@@ -3573,28 +3795,29 @@ ecdh_calc_secret:
         return( MBEDTLS_ERR_SSL_INTERNAL_ERROR );
     }
 
-    ssl->out_msglen  = header_len + content_len;
-    ssl->out_msgtype = MBEDTLS_SSL_MSG_HANDSHAKE;
-    ssl->out_msg[0]  = MBEDTLS_SSL_HS_CLIENT_KEY_EXCHANGE;
+    *olen = p - buf;
+    return( 0 );
+}
 
-    ssl->state++;
+static int ssl_out_client_key_exchange_postprocess( mbedtls_ssl_context *ssl )
+{
+    int ret;
 
-    if( ( ret = mbedtls_ssl_write_handshake_msg( ssl ) ) != 0 )
+    if( ( ret = mbedtls_ssl_build_pms( ssl ) ) != 0 )
     {
-        MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_write_handshake_msg", ret );
+        MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_ssl_build_pms", ret );
         return( ret );
     }
 
-    MBEDTLS_SSL_DEBUG_MSG( 2, ( "<= write client key exchange" ) );
-
+    ssl->state = MBEDTLS_SSL_CERTIFICATE_VERIFY;
     return( 0 );
 }
 
 #if !defined(MBEDTLS_KEY_EXCHANGE__CERT_REQ_ALLOWED__ENABLED)
 static int ssl_write_certificate_verify( mbedtls_ssl_context *ssl )
 {
-    const mbedtls_ssl_ciphersuite_t *ciphersuite_info =
-        ssl->handshake->ciphersuite_info;
+    mbedtls_ssl_ciphersuite_handle_t ciphersuite_info =
+        mbedtls_ssl_handshake_get_ciphersuite( ssl->handshake );
     int ret;
 
     MBEDTLS_SSL_DEBUG_MSG( 2, ( "=> write certificate verify" ) );
@@ -3619,8 +3842,8 @@ static int ssl_write_certificate_verify( mbedtls_ssl_context *ssl )
 static int ssl_write_certificate_verify( mbedtls_ssl_context *ssl )
 {
     int ret = MBEDTLS_ERR_SSL_FEATURE_UNAVAILABLE;
-    const mbedtls_ssl_ciphersuite_t *ciphersuite_info =
-        ssl->handshake->ciphersuite_info;
+    mbedtls_ssl_ciphersuite_handle_t ciphersuite_info =
+        mbedtls_ssl_handshake_get_ciphersuite( ssl->handshake );
     size_t n = 0, offset = 0;
     unsigned char hash[48];
     unsigned char *hash_start = hash;
@@ -3674,11 +3897,14 @@ static int ssl_write_certificate_verify( mbedtls_ssl_context *ssl )
 sign:
 #endif
 
-    ssl->handshake->calc_verify( ssl, hash, &hashlen );
+    mbedtls_ssl_calc_verify(
+            mbedtls_ssl_get_minor_ver( ssl ),
+            mbedtls_ssl_suite_get_mac( ciphersuite_info ),
+            ssl, hash, &hashlen );
 
 #if defined(MBEDTLS_SSL_PROTO_SSL3) || defined(MBEDTLS_SSL_PROTO_TLS1) || \
     defined(MBEDTLS_SSL_PROTO_TLS1_1)
-    if( ssl->minor_ver != MBEDTLS_SSL_MINOR_VERSION_3 )
+    if( mbedtls_ssl_get_minor_ver( ssl ) != MBEDTLS_SSL_MINOR_VERSION_3 )
     {
         /*
          * digitally-signed struct {
@@ -3708,7 +3934,7 @@ sign:
 #endif /* MBEDTLS_SSL_PROTO_SSL3 || MBEDTLS_SSL_PROTO_TLS1 || \
           MBEDTLS_SSL_PROTO_TLS1_1 */
 #if defined(MBEDTLS_SSL_PROTO_TLS1_2)
-    if( ssl->minor_ver == MBEDTLS_SSL_MINOR_VERSION_3 )
+    if( mbedtls_ssl_get_minor_ver( ssl ) == MBEDTLS_SSL_MINOR_VERSION_3 )
     {
         /*
          * digitally-signed struct {
@@ -3725,7 +3951,9 @@ sign:
          * Reason: Otherwise we should have running hashes for SHA512 and SHA224
          *         in order to satisfy 'weird' needs from the server side.
          */
-        if( ssl->handshake->ciphersuite_info->mac == MBEDTLS_MD_SHA384 )
+        if( mbedtls_ssl_suite_get_mac(
+                mbedtls_ssl_handshake_get_ciphersuite( ssl->handshake ) )
+            == MBEDTLS_MD_SHA384 )
         {
             md_alg = MBEDTLS_MD_SHA384;
             ssl->out_msg[4] = MBEDTLS_SSL_HASH_SHA384;
@@ -3756,7 +3984,8 @@ sign:
     if( ( ret = mbedtls_pk_sign_restartable( mbedtls_ssl_own_key( ssl ),
                          md_alg, hash_start, hashlen,
                          ssl->out_msg + 6 + offset, &n,
-                         ssl->conf->f_rng, ssl->conf->p_rng, rs_ctx ) ) != 0 )
+                         mbedtls_ssl_conf_get_frng( ssl->conf ),
+                         mbedtls_ssl_conf_get_prng( ssl->conf ), rs_ctx ) ) != 0 )
     {
         MBEDTLS_SSL_DEBUG_RET( 1, "mbedtls_pk_sign", ret );
 #if defined(MBEDTLS_SSL__ECP_RESTARTABLE)
@@ -3766,8 +3995,7 @@ sign:
         return( ret );
     }
 
-    ssl->out_msg[4 + offset] = (unsigned char)( n >> 8 );
-    ssl->out_msg[5 + offset] = (unsigned char)( n      );
+    (void)mbedtls_platform_put_uint16_be( &ssl->out_msg[4 + offset], n );
 
     ssl->out_msglen  = 6 + n + offset;
     ssl->out_msgtype = MBEDTLS_SSL_MSG_HANDSHAKE;
@@ -3807,8 +4035,8 @@ static int ssl_parse_new_session_ticket( mbedtls_ssl_context *ssl )
     if( ssl->in_msgtype != MBEDTLS_SSL_MSG_HANDSHAKE )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad new session ticket message" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_UNEXPECTED_MESSAGE );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                         MBEDTLS_SSL_ALERT_MSG_UNEXPECTED_MESSAGE );
         return( MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE );
     }
 
@@ -3826,23 +4054,22 @@ static int ssl_parse_new_session_ticket( mbedtls_ssl_context *ssl )
         ssl->in_hslen < 6 + mbedtls_ssl_hs_hdr_len( ssl ) )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad new session ticket message" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
         return( MBEDTLS_ERR_SSL_BAD_HS_NEW_SESSION_TICKET );
     }
 
     msg = ssl->in_msg + mbedtls_ssl_hs_hdr_len( ssl );
 
-    lifetime = ( ((uint32_t) msg[0]) << 24 ) | ( msg[1] << 16 ) |
-               ( msg[2] << 8 ) | ( msg[3] );
+    lifetime = (uint32_t)mbedtls_platform_get_uint32_be( msg );
 
-    ticket_len = ( msg[4] << 8 ) | ( msg[5] );
+    ticket_len = mbedtls_platform_get_uint16_be( &msg[4] );
 
     if( ticket_len + 6 + mbedtls_ssl_hs_hdr_len( ssl ) != ssl->in_hslen )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "bad new session ticket message" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_DECODE_ERROR );
         return( MBEDTLS_ERR_SSL_BAD_HS_NEW_SESSION_TICKET );
     }
 
@@ -3877,12 +4104,12 @@ static int ssl_parse_new_session_ticket( mbedtls_ssl_context *ssl )
     if( ( ticket = mbedtls_calloc( 1, ticket_len ) ) == NULL )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1, ( "ticket alloc failed" ) );
-        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
-                                        MBEDTLS_SSL_ALERT_MSG_INTERNAL_ERROR );
+        mbedtls_ssl_pend_fatal_alert( ssl,
+                                      MBEDTLS_SSL_ALERT_MSG_INTERNAL_ERROR );
         return( MBEDTLS_ERR_SSL_ALLOC_FAILED );
     }
 
-    memcpy( ticket, msg + 6, ticket_len );
+    mbedtls_platform_memcpy( ticket, msg + 6, ticket_len );
 
     ssl->session_negotiate->ticket = ticket;
     ssl->session_negotiate->ticket_len = ticket_len;
@@ -3918,7 +4145,7 @@ int mbedtls_ssl_handshake_client_step( mbedtls_ssl_context *ssl )
         return( ret );
 
 #if defined(MBEDTLS_SSL_PROTO_DTLS)
-    if( ssl->conf->transport == MBEDTLS_SSL_TRANSPORT_DATAGRAM &&
+    if( MBEDTLS_SSL_TRANSPORT_IS_DTLS( ssl->conf->transport ) &&
         ssl->handshake->retransmit_state == MBEDTLS_SSL_RETRANS_SENDING )
     {
         if( ( ret = mbedtls_ssl_flight_transmit( ssl ) ) != 0 )
@@ -3965,7 +4192,7 @@ int mbedtls_ssl_handshake_client_step( mbedtls_ssl_context *ssl )
            break;
 
        case MBEDTLS_SSL_SERVER_KEY_EXCHANGE:
-           ret = ssl_parse_server_key_exchange( ssl );
+           ret = ssl_process_in_server_key_exchange( ssl );
            break;
 
        case MBEDTLS_SSL_CERTIFICATE_REQUEST:
@@ -3988,7 +4215,7 @@ int mbedtls_ssl_handshake_client_step( mbedtls_ssl_context *ssl )
            break;
 
        case MBEDTLS_SSL_CLIENT_KEY_EXCHANGE:
-           ret = ssl_write_client_key_exchange( ssl );
+           ret = ssl_process_out_client_key_exchange( ssl );
            break;
 
        case MBEDTLS_SSL_CERTIFICATE_VERIFY:

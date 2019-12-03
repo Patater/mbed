@@ -38,6 +38,7 @@
 #if defined(MBEDTLS_X509_CRL_PARSE_C)
 
 #include "mbedtls/x509_crl.h"
+#include "mbedtls/x509_internal.h"
 #include "mbedtls/oid.h"
 #include "mbedtls/platform_util.h"
 
@@ -312,9 +313,9 @@ int mbedtls_x509_crl_parse_der( mbedtls_x509_crl *chain,
     if( crl == NULL || buf == NULL )
         return( MBEDTLS_ERR_X509_BAD_INPUT_DATA );
 
-    memset( &sig_params1, 0, sizeof( mbedtls_x509_buf ) );
-    memset( &sig_params2, 0, sizeof( mbedtls_x509_buf ) );
-    memset( &sig_oid2, 0, sizeof( mbedtls_x509_buf ) );
+    mbedtls_platform_memset( &sig_params1, 0, sizeof( mbedtls_x509_buf ) );
+    mbedtls_platform_memset( &sig_params2, 0, sizeof( mbedtls_x509_buf ) );
+    mbedtls_platform_memset( &sig_oid2, 0, sizeof( mbedtls_x509_buf ) );
 
     /*
      * Add new CRL on the end of the chain if needed.
@@ -346,7 +347,7 @@ int mbedtls_x509_crl_parse_der( mbedtls_x509_crl *chain,
     if( p == NULL )
         return( MBEDTLS_ERR_X509_ALLOC_FAILED );
 
-    memcpy( p, buf, buflen );
+    mbedtls_platform_memcpy( p, buf, buflen );
 
     crl->raw.p = p;
     crl->raw.len = buflen;
@@ -428,14 +429,16 @@ int mbedtls_x509_crl_parse_der( mbedtls_x509_crl *chain,
         mbedtls_x509_crl_free( crl );
         return( MBEDTLS_ERR_X509_INVALID_FORMAT + ret );
     }
+    p += len;
+    crl->issuer_raw.len = p - crl->issuer_raw.p;
 
-    if( ( ret = mbedtls_x509_get_name( &p, p + len, &crl->issuer ) ) != 0 )
+    if( ( ret = mbedtls_x509_get_name( crl->issuer_raw.p,
+                                       crl->issuer_raw.len,
+                                       &crl->issuer ) ) != 0 )
     {
         mbedtls_x509_crl_free( crl );
         return( ret );
     }
-
-    crl->issuer_raw.len = p - crl->issuer_raw.p;
 
     /*
      * thisUpdate          Time
@@ -508,10 +511,10 @@ int mbedtls_x509_crl_parse_der( mbedtls_x509_crl *chain,
     }
 
     if( crl->sig_oid.len != sig_oid2.len ||
-        memcmp( crl->sig_oid.p, sig_oid2.p, crl->sig_oid.len ) != 0 ||
+        mbedtls_platform_memcmp( crl->sig_oid.p, sig_oid2.p, crl->sig_oid.len ) != 0 ||
         sig_params1.len != sig_params2.len ||
         ( sig_params1.len != 0 &&
-          memcmp( sig_params1.p, sig_params2.p, sig_params1.len ) != 0 ) )
+          mbedtls_platform_memcmp( sig_params1.p, sig_params2.p, sig_params1.len ) != 0 ) )
     {
         mbedtls_x509_crl_free( crl );
         return( MBEDTLS_ERR_X509_SIG_MISMATCH );
@@ -619,11 +622,7 @@ int mbedtls_x509_crl_parse_file( mbedtls_x509_crl *chain, const char *path )
 }
 #endif /* MBEDTLS_FS_IO */
 
-/*
- * Return an informational string about the certificate.
- */
-#define BEFORE_COLON    14
-#define BC              "14"
+#if !defined(MBEDTLS_X509_REMOVE_INFO)
 /*
  * Return an informational string about the CRL.
  */
@@ -689,8 +688,8 @@ int mbedtls_x509_crl_info( char *buf, size_t size, const char *prefix,
     ret = mbedtls_snprintf( p, n, "\n%ssigned using  : ", prefix );
     MBEDTLS_X509_SAFE_SNPRINTF;
 
-    ret = mbedtls_x509_sig_alg_gets( p, n, &crl->sig_oid, crl->sig_pk, crl->sig_md,
-                             crl->sig_opts );
+    ret = mbedtls_x509_sig_alg_gets( p, n, crl->sig_pk,
+                                     crl->sig_md, crl->sig_opts );
     MBEDTLS_X509_SAFE_SNPRINTF;
 
     ret = mbedtls_snprintf( p, n, "\n" );
@@ -698,13 +697,14 @@ int mbedtls_x509_crl_info( char *buf, size_t size, const char *prefix,
 
     return( (int) ( size - n ) );
 }
+#endif /* !MBEDTLS_X509_REMOVE_INFO */
 
 /*
  * Initialize a CRL chain
  */
 void mbedtls_x509_crl_init( mbedtls_x509_crl *crl )
 {
-    memset( crl, 0, sizeof(mbedtls_x509_crl) );
+    mbedtls_platform_memset( crl, 0, sizeof(mbedtls_x509_crl) );
 }
 
 /*

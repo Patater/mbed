@@ -25,16 +25,16 @@
 #define MBEDTLS_X509_H
 
 #if !defined(MBEDTLS_CONFIG_FILE)
-#include "mbedtls/config.h"
+#include "config.h"
 #else
 #include MBEDTLS_CONFIG_FILE
 #endif
 
-#include "mbedtls/asn1.h"
-#include "mbedtls/pk.h"
+#include "asn1.h"
+#include "pk.h"
 
 #if defined(MBEDTLS_RSA_C)
-#include "mbedtls/rsa.h"
+#include "rsa.h"
 #endif
 
 /**
@@ -110,28 +110,6 @@
 /* \} addtogroup x509_module */
 
 /*
- * X.509 v3 Subject Alternative Name types.
- *      otherName                       [0]     OtherName,
- *      rfc822Name                      [1]     IA5String,
- *      dNSName                         [2]     IA5String,
- *      x400Address                     [3]     ORAddress,
- *      directoryName                   [4]     Name,
- *      ediPartyName                    [5]     EDIPartyName,
- *      uniformResourceIdentifier       [6]     IA5String,
- *      iPAddress                       [7]     OCTET STRING,
- *      registeredID                    [8]     OBJECT IDENTIFIER
- */
-#define MBEDTLS_X509_SAN_OTHER_NAME                      0
-#define MBEDTLS_X509_SAN_RFC822_NAME                     1
-#define MBEDTLS_X509_SAN_DNS_NAME                        2
-#define MBEDTLS_X509_SAN_X400_ADDRESS_NAME               3
-#define MBEDTLS_X509_SAN_DIRECTORY_NAME                  4
-#define MBEDTLS_X509_SAN_EDI_PARTY_NAME                  5
-#define MBEDTLS_X509_SAN_UNIFORM_RESOURCE_IDENTIFIER     6
-#define MBEDTLS_X509_SAN_IP_ADDRESS                      7
-#define MBEDTLS_X509_SAN_REGISTERED_ID                   8
-
-/*
  * X.509 v3 Key Usage Extension flags
  * Reminder: update x509_info_key_usage() when adding new flags.
  */
@@ -164,26 +142,24 @@
  *
  * Comments refer to the status for using certificates. Status can be
  * different for writing certificates or reading CRLs or CSRs.
- *
- * Those are defined in oid.h as oid.c needs them in a data structure. Since
- * these were previously defined here, let's have aliases for compatibility.
  */
-#define MBEDTLS_X509_EXT_AUTHORITY_KEY_IDENTIFIER MBEDTLS_OID_X509_EXT_AUTHORITY_KEY_IDENTIFIER
-#define MBEDTLS_X509_EXT_SUBJECT_KEY_IDENTIFIER   MBEDTLS_OID_X509_EXT_SUBJECT_KEY_IDENTIFIER
-#define MBEDTLS_X509_EXT_KEY_USAGE                MBEDTLS_OID_X509_EXT_KEY_USAGE
-#define MBEDTLS_X509_EXT_CERTIFICATE_POLICIES     MBEDTLS_OID_X509_EXT_CERTIFICATE_POLICIES
-#define MBEDTLS_X509_EXT_POLICY_MAPPINGS          MBEDTLS_OID_X509_EXT_POLICY_MAPPINGS
-#define MBEDTLS_X509_EXT_SUBJECT_ALT_NAME         MBEDTLS_OID_X509_EXT_SUBJECT_ALT_NAME         /* Supported (DNS) */
-#define MBEDTLS_X509_EXT_ISSUER_ALT_NAME          MBEDTLS_OID_X509_EXT_ISSUER_ALT_NAME
-#define MBEDTLS_X509_EXT_SUBJECT_DIRECTORY_ATTRS  MBEDTLS_OID_X509_EXT_SUBJECT_DIRECTORY_ATTRS
-#define MBEDTLS_X509_EXT_BASIC_CONSTRAINTS        MBEDTLS_OID_X509_EXT_BASIC_CONSTRAINTS        /* Supported */
-#define MBEDTLS_X509_EXT_NAME_CONSTRAINTS         MBEDTLS_OID_X509_EXT_NAME_CONSTRAINTS
-#define MBEDTLS_X509_EXT_POLICY_CONSTRAINTS       MBEDTLS_OID_X509_EXT_POLICY_CONSTRAINTS
-#define MBEDTLS_X509_EXT_EXTENDED_KEY_USAGE       MBEDTLS_OID_X509_EXT_EXTENDED_KEY_USAGE
-#define MBEDTLS_X509_EXT_CRL_DISTRIBUTION_POINTS  MBEDTLS_OID_X509_EXT_CRL_DISTRIBUTION_POINTS
-#define MBEDTLS_X509_EXT_INIHIBIT_ANYPOLICY       MBEDTLS_OID_X509_EXT_INIHIBIT_ANYPOLICY
-#define MBEDTLS_X509_EXT_FRESHEST_CRL             MBEDTLS_OID_X509_EXT_FRESHEST_CRL
-#define MBEDTLS_X509_EXT_NS_CERT_TYPE             MBEDTLS_OID_X509_EXT_NS_CERT_TYPE
+#define MBEDTLS_X509_EXT_AUTHORITY_KEY_IDENTIFIER    (1 << 0)
+#define MBEDTLS_X509_EXT_SUBJECT_KEY_IDENTIFIER      (1 << 1)
+#define MBEDTLS_X509_EXT_KEY_USAGE                   (1 << 2)
+#define MBEDTLS_X509_EXT_CERTIFICATE_POLICIES        (1 << 3)
+#define MBEDTLS_X509_EXT_POLICY_MAPPINGS             (1 << 4)
+#define MBEDTLS_X509_EXT_SUBJECT_ALT_NAME            (1 << 5)    /* Supported (DNS) */
+#define MBEDTLS_X509_EXT_ISSUER_ALT_NAME             (1 << 6)
+#define MBEDTLS_X509_EXT_SUBJECT_DIRECTORY_ATTRS     (1 << 7)
+#define MBEDTLS_X509_EXT_BASIC_CONSTRAINTS           (1 << 8)    /* Supported */
+#define MBEDTLS_X509_EXT_NAME_CONSTRAINTS            (1 << 9)
+#define MBEDTLS_X509_EXT_POLICY_CONSTRAINTS          (1 << 10)
+#define MBEDTLS_X509_EXT_EXTENDED_KEY_USAGE          (1 << 11)
+#define MBEDTLS_X509_EXT_CRL_DISTRIBUTION_POINTS     (1 << 12)
+#define MBEDTLS_X509_EXT_INIHIBIT_ANYPOLICY          (1 << 13)
+#define MBEDTLS_X509_EXT_FRESHEST_CRL                (1 << 14)
+
+#define MBEDTLS_X509_EXT_NS_CERT_TYPE                (1 << 16)
 
 /*
  * Storage format identifiers
@@ -206,6 +182,15 @@ extern "C" {
  * \name Structures for parsing X.509 certificates, CRLs and CSRs
  * \{
  */
+
+/**
+ * Basic length-value buffer structure
+ */
+typedef struct mbedtls_x509_buf_raw
+{
+    unsigned char *p;    /*!< The address of the first byte in the buffer. */
+    size_t len;          /*!< The number of Bytes in the buffer.           */
+} mbedtls_x509_buf_raw;
 
 /**
  * Type-length-value structure that allows for ASN1 using DER.
@@ -265,6 +250,7 @@ int mbedtls_x509_dn_gets( char *buf, size_t size, const mbedtls_x509_name *dn );
  */
 int mbedtls_x509_serial_gets( char *buf, size_t size, const mbedtls_x509_buf *serial );
 
+#if defined(MBEDTLS_HAVE_TIME_DATE)
 /**
  * \brief          Check a given mbedtls_x509_time against the system time
  *                 and tell if it's in the past.
@@ -292,6 +278,44 @@ int mbedtls_x509_time_is_past( const mbedtls_x509_time *to );
  *                 0 otherwise.
  */
 int mbedtls_x509_time_is_future( const mbedtls_x509_time *from );
+#endif /* MBEDTLS_HAVE_TIME_DATE */
+
+/**
+ * \brief          Free a dynamic linked list presentation of an X.509 name
+ *                 as returned e.g. by mbedtls_x509_crt_get_subject().
+ *
+ * \param name     The address of the first name component. This may
+ *                 be \c NULL, in which case this functions returns
+ *                 immediately.
+ */
+void mbedtls_x509_name_free( mbedtls_x509_name *name );
+
+/**
+ * \brief          Free a dynamic linked list presentation of an X.509 sequence
+ *                 as returned e.g. by mbedtls_x509_crt_get_subject_alt_name().
+ *
+ * \param seq      The address of the first sequence component. This may
+ *                 be \c NULL, in which case this functions returns
+ *                 immediately.
+ */
+static inline void mbedtls_x509_sequence_free( mbedtls_x509_sequence *seq )
+{
+    mbedtls_asn1_sequence_free( (mbedtls_asn1_sequence*) seq );
+}
+
+#if !defined(MBEDTLS_HAVE_TIME_DATE)
+static inline int mbedtls_x509_time_is_past( const mbedtls_x509_time *to )
+{
+    ((void) to);
+    return( 0 );
+}
+
+static inline int mbedtls_x509_time_is_future( const mbedtls_x509_time *from )
+{
+    ((void) from);
+    return( 0 );
+}
+#endif /* !MBEDTLS_HAVE_TIME_DATE */
 
 #if defined(MBEDTLS_SELF_TEST)
 
@@ -304,51 +328,22 @@ int mbedtls_x509_self_test( int verbose );
 
 #endif /* MBEDTLS_SELF_TEST */
 
-/*
- * Internal module functions. You probably do not want to use these unless you
- * know you do.
- */
-int mbedtls_x509_get_name( unsigned char **p, const unsigned char *end,
-                   mbedtls_x509_name *cur );
-int mbedtls_x509_get_alg_null( unsigned char **p, const unsigned char *end,
-                       mbedtls_x509_buf *alg );
-int mbedtls_x509_get_alg( unsigned char **p, const unsigned char *end,
-                  mbedtls_x509_buf *alg, mbedtls_x509_buf *params );
-#if defined(MBEDTLS_X509_RSASSA_PSS_SUPPORT)
-int mbedtls_x509_get_rsassa_pss_params( const mbedtls_x509_buf *params,
-                                mbedtls_md_type_t *md_alg, mbedtls_md_type_t *mgf_md,
-                                int *salt_len );
-#endif
-int mbedtls_x509_get_sig( unsigned char **p, const unsigned char *end, mbedtls_x509_buf *sig );
-int mbedtls_x509_get_sig_alg( const mbedtls_x509_buf *sig_oid, const mbedtls_x509_buf *sig_params,
-                      mbedtls_md_type_t *md_alg, mbedtls_pk_type_t *pk_alg,
-                      void **sig_opts );
-int mbedtls_x509_get_time( unsigned char **p, const unsigned char *end,
-                   mbedtls_x509_time *t );
-int mbedtls_x509_get_serial( unsigned char **p, const unsigned char *end,
-                     mbedtls_x509_buf *serial );
-int mbedtls_x509_get_ext( unsigned char **p, const unsigned char *end,
-                  mbedtls_x509_buf *ext, int tag );
-int mbedtls_x509_sig_alg_gets( char *buf, size_t size, const mbedtls_x509_buf *sig_oid,
-                       mbedtls_pk_type_t pk_alg, mbedtls_md_type_t md_alg,
-                       const void *sig_opts );
-int mbedtls_x509_key_size_helper( char *buf, size_t buf_size, const char *name );
-int mbedtls_x509_string_to_names( mbedtls_asn1_named_data **head, const char *name );
-int mbedtls_x509_set_extension( mbedtls_asn1_named_data **head, const char *oid, size_t oid_len,
-                        int critical, const unsigned char *val,
-                        size_t val_len );
-int mbedtls_x509_write_extensions( unsigned char **p, unsigned char *start,
-                           mbedtls_asn1_named_data *first );
-int mbedtls_x509_write_names( unsigned char **p, unsigned char *start,
-                      mbedtls_asn1_named_data *first );
-int mbedtls_x509_write_sig( unsigned char **p, unsigned char *start,
-                    const char *oid, size_t oid_len,
-                    unsigned char *sig, size_t size );
-
 #define MBEDTLS_X509_SAFE_SNPRINTF                          \
     do {                                                    \
         if( ret < 0 || (size_t) ret >= n )                  \
             return( MBEDTLS_ERR_X509_BUFFER_TOO_SMALL );    \
+                                                            \
+        n -= (size_t) ret;                                  \
+        p += (size_t) ret;                                  \
+    } while( 0 )
+
+#define MBEDTLS_X509_SAFE_SNPRINTF_WITH_CLEANUP             \
+    do {                                                    \
+        if( ret < 0 || (size_t) ret >= n )                  \
+        {                                                   \
+            ret = MBEDTLS_ERR_X509_BUFFER_TOO_SMALL;        \
+            goto cleanup;                                   \
+        }                                                   \
                                                             \
         n -= (size_t) ret;                                  \
         p += (size_t) ret;                                  \

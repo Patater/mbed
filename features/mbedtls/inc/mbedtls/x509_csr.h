@@ -25,12 +25,12 @@
 #define MBEDTLS_X509_CSR_H
 
 #if !defined(MBEDTLS_CONFIG_FILE)
-#include "mbedtls/config.h"
+#include "config.h"
 #else
 #include MBEDTLS_CONFIG_FILE
 #endif
 
-#include "mbedtls/x509.h"
+#include "x509.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -123,6 +123,7 @@ int mbedtls_x509_csr_parse( mbedtls_x509_csr *csr, const unsigned char *buf, siz
 int mbedtls_x509_csr_parse_file( mbedtls_x509_csr *csr, const char *path );
 #endif /* MBEDTLS_FS_IO */
 
+#if !defined(MBEDTLS_X509_REMOVE_INFO)
 /**
  * \brief          Returns an informational string about the
  *                 CSR.
@@ -137,6 +138,7 @@ int mbedtls_x509_csr_parse_file( mbedtls_x509_csr *csr, const char *path );
  */
 int mbedtls_x509_csr_info( char *buf, size_t size, const char *prefix,
                    const mbedtls_x509_csr *csr );
+#endif /* !MBEDTLS_X509_REMOVE_INFO */
 
 /**
  * \brief          Initialize a CSR

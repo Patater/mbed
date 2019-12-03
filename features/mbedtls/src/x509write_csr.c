@@ -33,14 +33,10 @@
 #if defined(MBEDTLS_X509_CSR_WRITE_C)
 
 #include "mbedtls/x509_csr.h"
+#include "mbedtls/x509_internal.h"
 #include "mbedtls/oid.h"
 #include "mbedtls/asn1write.h"
 #include "mbedtls/platform_util.h"
-
-#if defined(MBEDTLS_USE_PSA_CRYPTO)
-#include "psa/crypto.h"
-#include "mbedtls/psa_util.h"
-#endif
 
 #include <string.h>
 #include <stdlib.h>
@@ -61,7 +57,7 @@
 
 void mbedtls_x509write_csr_init( mbedtls_x509write_csr *ctx )
 {
-    memset( ctx, 0, sizeof( mbedtls_x509write_csr ) );
+    mbedtls_platform_memset( ctx, 0, sizeof( mbedtls_x509write_csr ) );
 }
 
 void mbedtls_x509write_csr_free( mbedtls_x509write_csr *ctx )
@@ -96,17 +92,35 @@ int mbedtls_x509write_csr_set_extension( mbedtls_x509write_csr *ctx,
                                0, val, val_len );
 }
 
+static size_t csr_get_unused_bits_for_named_bitstring( unsigned char bitstring,
+                                                       size_t bit_offset )
+{
+    size_t unused_bits;
+
+     /* Count the unused bits removing trailing 0s */
+    for( unused_bits = bit_offset; unused_bits < 8; unused_bits++ )
+        if( ( ( bitstring >> unused_bits ) & 0x1 ) != 0 )
+            break;
+
+     return( unused_bits );
+}
+
 int mbedtls_x509write_csr_set_key_usage( mbedtls_x509write_csr *ctx, unsigned char key_usage )
 {
     unsigned char buf[4];
     unsigned char *c;
+    size_t unused_bits;
     int ret;
 
     c = buf + 4;
 
-    ret = mbedtls_asn1_write_named_bitstring( &c, buf, &key_usage, 8 );
-    if( ret < 3 || ret > 4 )
+    unused_bits = csr_get_unused_bits_for_named_bitstring( key_usage, 0 );
+    ret = mbedtls_asn1_write_bitstring( &c, buf, &key_usage, 8 - unused_bits );
+
+    if( ret < 0 )
         return( ret );
+    else if( ret < 3 || ret > 4 )
+        return( MBEDTLS_ERR_X509_INVALID_FORMAT );
 
     ret = mbedtls_x509write_csr_set_extension( ctx, MBEDTLS_OID_KEY_USAGE,
                                        MBEDTLS_OID_SIZE( MBEDTLS_OID_KEY_USAGE ),
@@ -122,12 +136,20 @@ int mbedtls_x509write_csr_set_ns_cert_type( mbedtls_x509write_csr *ctx,
 {
     unsigned char buf[4];
     unsigned char *c;
+    size_t unused_bits;
     int ret;
 
     c = buf + 4;
 
-    ret = mbedtls_asn1_write_named_bitstring( &c, buf, &ns_cert_type, 8 );
-    if( ret < 3 || ret > 4 )
+    unused_bits = csr_get_unused_bits_for_named_bitstring( ns_cert_type, 0 );
+    ret = mbedtls_asn1_write_bitstring( &c,
+                                        buf,
+                                        &ns_cert_type,
+                                        8 - unused_bits );
+
+    if( ret < 0 )
+        return( ret );
+    else if( ret < 3 || ret > 4 )
         return( ret );
 
     ret = mbedtls_x509write_csr_set_extension( ctx, MBEDTLS_OID_NS_CERT_TYPE,
@@ -153,11 +175,7 @@ int mbedtls_x509write_csr_der( mbedtls_x509write_csr *ctx, unsigned char *buf, s
     size_t pub_len = 0, sig_and_oid_len = 0, sig_len;
     size_t len = 0;
     mbedtls_pk_type_t pk_alg;
-#if defined(MBEDTLS_USE_PSA_CRYPTO)
-    psa_hash_operation_t hash_operation = PSA_HASH_OPERATION_INIT;
-    size_t hash_len;
-    psa_algorithm_t hash_alg = mbedtls_psa_translate_md( ctx->md_alg );
-#endif /* MBEDTLS_USE_PSA_CRYPTO */
+
     /*
      * Prepare data to be signed in tmp_buf
      */
@@ -208,23 +226,9 @@ int mbedtls_x509write_csr_der( mbedtls_x509write_csr *ctx, unsigned char *buf, s
 
     /*
      * Prepare signature
-     * Note: hash errors can happen only after an internal error
      */
-#if defined(MBEDTLS_USE_PSA_CRYPTO)
-    if( psa_hash_setup( &hash_operation, hash_alg ) != PSA_SUCCESS )
-        return( MBEDTLS_ERR_X509_FATAL_ERROR );
-
-    if( psa_hash_update( &hash_operation, c, len ) != PSA_SUCCESS )
-        return( MBEDTLS_ERR_X509_FATAL_ERROR );
-
-    if( psa_hash_finish( &hash_operation, hash, sizeof( hash ), &hash_len )
-        != PSA_SUCCESS )
-    {
-        return( MBEDTLS_ERR_X509_FATAL_ERROR );
-    }
-#else /* MBEDTLS_USE_PSA_CRYPTO */
     mbedtls_md( mbedtls_md_info_from_type( ctx->md_alg ), c, len, hash );
-#endif
+
     if( ( ret = mbedtls_pk_sign( ctx->key, ctx->md_alg, hash, 0, sig, &sig_len,
                                  f_rng, p_rng ) ) != 0 )
     {
@@ -255,7 +259,7 @@ int mbedtls_x509write_csr_der( mbedtls_x509write_csr *ctx, unsigned char *buf, s
         return( MBEDTLS_ERR_ASN1_BUF_TOO_SMALL );
 
     c2 -= len;
-    memcpy( c2, c, len );
+    mbedtls_platform_memcpy( c2, c, len );
 
     len += sig_and_oid_len;
     MBEDTLS_ASN1_CHK_ADD( len, mbedtls_asn1_write_len( &c2, buf, len ) );
