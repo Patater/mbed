@@ -287,8 +287,10 @@ private:
 #ifdef MBEDTLS_X509_CRT_PARSE_C
     mbedtls_pk_context _pkctx;
 #endif
+#if !defined(MBEDTLS_SSL_CONF_RNG)
     mbedtls_ctr_drbg_context _ctr_drbg;
     mbedtls_entropy_context _entropy;
+#endif
 
     rtos::EventFlags _event_flag;
     mbed::Callback<void()> _sigio;

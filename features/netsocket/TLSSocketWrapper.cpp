@@ -52,8 +52,10 @@ TLSSocketWrapper::TLSSocketWrapper(Socket *transport, const char *hostname, cont
         print_mbedtls_error("mbedtls_platform_setup()", ret);
     }
 #endif /* MBEDTLS_PLATFORM_C */
+#if !defined(MBEDTLS_SSL_CONF_RNG)
     mbedtls_entropy_init(&_entropy);
     mbedtls_ctr_drbg_init(&_ctr_drbg);
+#endif
     mbedtls_ssl_init(&_ssl);
 #if defined(MBEDTLS_X509_CRT_PARSE_C)
     mbedtls_pk_init(&_pkctx);
@@ -69,8 +71,10 @@ TLSSocketWrapper::~TLSSocketWrapper()
     if (_transport) {
         close();
     }
+#if !defined(MBEDTLS_SSL_CONF_RNG)
     mbedtls_entropy_free(&_entropy);
     mbedtls_ctr_drbg_free(&_ctr_drbg);
+#endif
     mbedtls_ssl_free(&_ssl);
 #if defined(MBEDTLS_X509_CRT_PARSE_C)
     mbedtls_pk_free(&_pkctx);
@@ -85,7 +89,7 @@ TLSSocketWrapper::~TLSSocketWrapper()
 
 void TLSSocketWrapper::set_hostname(const char *hostname)
 {
-#ifdef MBEDTLS_X509_CRT_PARSE_C
+#if defined(MBEDTLS_X509_CRT_PARSE_C) && !defined(MBEDTLS_X509_REMOVE_HOSTNAME_VERIFICATION)
     mbedtls_ssl_set_hostname(&_ssl, hostname);
 #endif
 }
@@ -180,6 +184,8 @@ nsapi_error_t TLSSocketWrapper::start_handshake(bool first_call)
 #else
     tr_info("Starting TLS handshake");
 #endif
+
+#if !defined(MBEDTLS_SSL_CONF_RNG)
     /*
      * Initialize TLS-related stuf.
      */
@@ -191,6 +197,7 @@ nsapi_error_t TLSSocketWrapper::start_handshake(bool first_call)
     }
 
     mbedtls_ssl_conf_rng(get_ssl_config(), mbedtls_ctr_drbg_random, &_ctr_drbg);
+#endif
 
 
 #if MBED_CONF_TLS_SOCKET_DEBUG_LEVEL > 0
