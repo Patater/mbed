@@ -159,6 +159,9 @@
         "ARM_MUSCA_A1_S": {
             "stdio-baud-rate": 115200
         },
+        "CY8CPROTO_064_SB": {
+            "stdio-baud-rate": 115200
+        },
         "EFM32": {
             "stdio-baud-rate": 115200
         },
