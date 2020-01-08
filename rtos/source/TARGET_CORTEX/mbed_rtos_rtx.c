@@ -1,5 +1,5 @@
 /* mbed Microcontroller Library
- * Copyright (c) 2018-2018 ARM Limited
+ * Copyright (c) 2018-2020 ARM Limited
  * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,6 +32,13 @@
 #include "FEATURE_TFM/interface/include/tfm_ns_lock.h"
 #endif
 
+#if defined(TARGET_TFM_TWINCPU)
+#include "tfm_multi_core_api.h"
+#include "tfm_ns_mailbox.h"
+#include "platform_multicore.h"
+#include "tfm_ns_interface.h"
+#endif // defined(TARGET_TFM_TWINCPU)
+
 #if defined(FEATURE_NSPE) && defined(FEATURE_SPM_MAILBOX)
 
 MBED_ALIGN(8) char psa_spm_dispatcher_th_stack[0x100];
@@ -63,6 +70,45 @@ void mbed_rtos_init()
 {
     osKernelInitialize();
 }
+
+#if defined(TARGET_TFM_TWINCPU)
+static struct ns_mailbox_queue_t ns_mailbox_queue;
+
+static void tfm_ns_multi_core_boot(void)
+{
+    int32_t ret;
+
+    ret = tfm_ns_wait_for_s_cpu_ready();
+    if (ret != PLATFORM_MAILBOX_SUCCESS) {
+        MBED_ERROR(MBED_MAKE_ERROR( MBED_MODULE_PLATFORM,
+                                    MBED_ERROR_CODE_INITIALIZATION_FAILED),
+                                    "Failed to sync-up multi-core");
+        /* Avoid undefined behavior after multi-core sync-up failed */
+        for (;;) {
+        }
+    }
+
+    ret = tfm_ns_mailbox_init(&ns_mailbox_queue);
+    if (ret != MAILBOX_SUCCESS) {
+        MBED_ERROR(MBED_MAKE_ERROR( MBED_MODULE_PLATFORM,
+                                    MBED_ERROR_CODE_INITIALIZATION_FAILED),
+                                    "Failed to initialize NS mailbox");
+        /* Avoid undefined behavior after NS mailbox initialization failed */
+        for (;;) {
+        }
+    }
+
+    ret = tfm_ns_interface_init();
+    if (ret != TFM_SUCCESS) {
+        MBED_ERROR(MBED_MAKE_ERROR( MBED_MODULE_PLATFORM,
+                                    MBED_ERROR_CODE_INITIALIZATION_FAILED),
+                                    "Failed to initialize NS interface");
+        /* Avoid undefined behavior after NS interface initialization failed */
+        for (;;) {
+        }
+    }
+}
+#endif // defined(TARGET_TFM_TWINCPU)
 
 MBED_NORETURN void mbed_rtos_start()
 {
@@ -106,6 +152,10 @@ MBED_NORETURN void mbed_rtos_start()
 #if defined(FEATURE_TFM) && defined(FEATURE_NSPE)
     tfm_ns_lock_init();
 #endif // defined(FEATURE_TFM) && defined(FEATURE_NSPE)
+
+#if defined(TARGET_TFM_TWINCPU)
+    tfm_ns_multi_core_boot();
+#endif // defined(TARGET_TFM_TWINCPU)
 
     singleton_mutex_id = osMutexNew(&singleton_mutex_attr);
     osThreadId_t result = osThreadNew((osThreadFunc_t)mbed_start, NULL, &_main_thread_attr);
