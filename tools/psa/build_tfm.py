@@ -44,11 +44,14 @@ VERSION_FILE_PATH = join(ROOT, 'features/FEATURE_PSA/TARGET_TFM')
 TC_DICT = {"ARMCLANG": "ARMC6",
            "GNUARM": "GCC_ARM"}
 
+upstream_tfm = 'https://git.trustedfirmware.org/trusted-firmware-m.git'
+patater_tfm = 'https://github.com/Patater/trusted-firmware-m.git'
+
 dependencies = {
     "trusted-firmware-m":
-    ['https://git.trustedfirmware.org/trusted-firmware-m.git',
-     'feature-twincpu',
-     '14d4a73cae631ea291f4d8d04e3c588ea9e955c8'],
+    [patater_tfm,
+     'feature-dualcpu',
+     '1adb3fe2850c0cc72d29512a55f332fe8f61ad60'],
     "mbedtls": ['https://github.com/ARMmbed/mbedtls.git',
                 'mbedtls-2.7.9'],
     "mbed-crypto": ['https://github.com/ARMmbed/mbed-crypto.git',
