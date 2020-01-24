@@ -48,10 +48,7 @@ upstream_tfm = 'https://git.trustedfirmware.org/trusted-firmware-m.git'
 patater_tfm = 'https://github.com/Patater/trusted-firmware-m.git'
 
 dependencies = {
-    "trusted-firmware-m":
-    [patater_tfm,
-     'feature-dualcpu',
-     '1adb3fe2850c0cc72d29512a55f332fe8f61ad60'],
+    "trusted-firmware-m": [patater_tfm, 'gnuarm921'],
     "mbedtls": ['https://github.com/ARMmbed/mbedtls.git',
                 'mbedtls-2.7.9'],
     "mbed-crypto": ['https://github.com/ARMmbed/mbed-crypto.git',
