@@ -173,30 +173,6 @@ def _detect_and_write_tfm_version(tfm_dir, commit):
     if commit:
         _commit_changes(VERSION_FILE_PATH)
 
-def _check_repo_version(name, deps):
-    """
-    Compare the version of cloned and expected and exit if they don't match
-    :param name: Name of the git repository
-    :param deps: Dictionary containing dependency details
-    """
-
-    if name == 'trusted-firmware-m':
-        cmd = ['git', '-C', join(TF_M_BUILD_DIR, name),
-               'rev-parse', 'HEAD']
-    else:
-        cmd = ['git', '-C', join(TF_M_BUILD_DIR, name),
-               'describe', '--tags']
-    _out = _run_cmd_and_return(cmd, True)
-    git_version = deps.get(name)[2] if name == "trusted-firmware-m" else deps.get(name)[1]
-    if _out.strip('\n') != git_version:
-        logger.error('Conflict: cloned "%s" and expected "%s"',
-                     _out.strip('\n'), deps.get(name)[1])
-        logger.error('check and remove folder %s',
-                     join(TF_M_BUILD_DIR, name))
-        sys.exit(1)
-    else:
-        logger.info('%s: version check OK', name)
-
 def _check_and_clone_repo(name, deps):
     """
     Check if the repositories are already cloned. If not clone them
@@ -204,19 +180,18 @@ def _check_and_clone_repo(name, deps):
     :param deps: Dictionary containing dependency details
     """
 
+    gitref = deps.get(name)[1]
     if not isdir(join(TF_M_BUILD_DIR, name)):
         logger.info('Cloning %s repo', name)
         cmd = ['git', '-C', TF_M_BUILD_DIR, 'clone', '-b',
-               deps.get(name)[1], deps.get(name)[0]]
+               gitref, deps.get(name)[0]]
         _run_cmd_and_return(cmd)
-        if name == "trusted-firmware-m":
-            cmd = ['git', '-C', join(TF_M_BUILD_DIR, name), 'checkout', 
-                   deps.get(name)[2]]
-            _run_cmd_and_return(cmd)
         logger.info('Cloned %s repo successfully', name)
     else:
-        logger.info('%s repo exists, checking git version...', name)
-        _check_repo_version(name, deps)
+        logger.info('%s repo exists, checking out %s...', name, gitref)
+        cmd = ['git', '-C', join(TF_M_BUILD_DIR, name), 'checkout', gitref]
+        _run_cmd_and_return(cmd)
+        logger.info('Checked out %s successfully', gitref)
 
 def _clone_tfm_repo(commit):
     """
