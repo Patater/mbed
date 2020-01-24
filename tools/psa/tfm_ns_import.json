@@ -63,6 +63,14 @@
         {
             "src_file": "install/export/tfm/src/platform_ns_mailbox.c",
             "dst_file": "features/FEATURE_PSA/TARGET_TFM/TARGET_TFM_TWINCPU/src/platform_ns_mailbox.c"
+        },
+        {
+            "src_file": "install/export/platform/ext/target/cypress/psoc64/partition/flash_layout.h",
+            "dst_file": "targets/TARGET_Cypress/TARGET_PSOC6/TARGET_CY8CKIT_064S2_4343W/partition/flash_layout.h"
+        },
+        {
+            "src_file": "install/export/platform/ext/target/cypress/psoc64/partition/region_defs.h",
+            "dst_file": "targets/TARGET_Cypress/TARGET_PSOC6/TARGET_CY8CKIT_064S2_4343W/partition/region_defs.h"
         }
     ],
     "folders": [
