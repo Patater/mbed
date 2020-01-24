@@ -13,22 +13,6 @@
             "dst_file": "features/FEATURE_PSA/TARGET_TFM/src/tfm_sst_ipc_api.c"
         },
         {
-            "src_file": "install/export/tfm/src/tfm_nspm_api.c",
-            "dst_file": "features/FEATURE_PSA/TARGET_TFM/TARGET_TFM_V8M/src/tfm_nspm_api.c"
-        },
-        {
-            "src_file": "install/export/tfm/src/tfm_nspm_svc_handler.c",
-            "dst_file": "features/FEATURE_PSA/TARGET_TFM/TARGET_TFM_V8M/src/tfm_nspm_svc_handler.c"
-        },
-        {
-            "src_file": "install/export/tfm/src/tfm_psa_ns_api.c",
-            "dst_file": "features/FEATURE_PSA/TARGET_TFM/TARGET_TFM_V8M/src/tfm_psa_ns_api.c"
-        },
-        {
-            "src_file": "install/export/tfm/src/tfm_ns_interface.c",
-            "dst_file": "features/FEATURE_PSA/TARGET_TFM/TARGET_TFM_V8M/src/tfm_ns_interface.c"
-        },
-        {
             "src_file": "app/os_wrapper_cmsis_rtos_v2.c",
             "dst_file": "features/FEATURE_PSA/TARGET_TFM/src/os_wrapper_cmsis_rtos_v2.c"
         },
