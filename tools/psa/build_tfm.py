@@ -413,19 +413,7 @@ def _copy_tfm_ns_files(source):
             dst_file = join(ROOT, f["dst_file"])
             if not isdir(dirname(dst_file)):
                 os.makedirs(dirname(dst_file))
-            try:
-                shutil.copy2(src_file, dst_file)
-            except FileNotFoundError:
-                # Workaround: TF-M build process exports all NS API files to
-                # cmake build folder. The json file `tfm_ns_import.json` contains
-                # list of files and folder relative to cmake build folder. 
-                # But it doesn't export following files tfm_multi_core_api.c,
-                # tfm_multi_core_psa_ns_api.c, tfm_ns_mailbox.c. These files
-                # along with the OS abstraction layer app/os_wrapper_cmsis_rtos_v2.c
-                # are handled as an exception.
-                # https://developer.trustedfirmware.org/T642
-                src_file = join(source, os.pardir, f["src_file"])
-                shutil.copy2(src_file, dst_file)
+            shutil.copy2(src_file, dst_file)
         for folder in data_folders:
             src_folder = join(source, folder["src_folder"])
             dst_folder = join(ROOT, folder["dst_folder"])
