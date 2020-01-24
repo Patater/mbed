@@ -12866,7 +12866,6 @@
     },
     "CY8CPROTO_064_SB": {
         "inherits": [
-            "PSA_DUAL_CORE_NSPE",
             "MCU_PSOC6_M4"
         ],
         "components_remove": [
@@ -12892,16 +12891,7 @@
         "reset_method": "default",
         "post_binary_hook": {
             "function": "PSOC6Code.sign_image"
-        },
-        "tfm_target_name": "psoc64_1m",
-        "tfm_bootloader_supported": false,
-        "tfm_default_toolchain": "ARMCLANG",
-        "tfm_supported_toolchains": [
-            "ARMCLANG",
-            "GNUARM"
-        ],
-        "tfm_delivery_dir": "TARGET_Cypress/TARGET_PSOC6/TARGET_CY8CPROTO_064_SB",
-        "TFM_OUTPUT_EXT": "hex"
+        }
     },
     "CYW9P62S1_43438EVB_01": {
         "inherits": [
