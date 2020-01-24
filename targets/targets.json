@@ -12708,9 +12708,8 @@
         "program_cycle_s": 10,
         "tfm_target_name": "psoc64",
         "tfm_bootloader_supported": false,
-        "tfm_default_toolchain": "ARMCLANG",
+        "tfm_default_toolchain": "GNUARM",
         "tfm_supported_toolchains": [
-            "ARMCLANG",
             "GNUARM"
         ],
         "tfm_delivery_dir": "TARGET_Cypress/TARGET_PSOC6/TARGET_CY8CKIT_064S2_4343W",
