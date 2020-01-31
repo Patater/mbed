@@ -54,6 +54,25 @@ static void cy_us_ticker_irq_handler(MBED_UNUSED void *arg, MBED_UNUSED cyhal_ti
 void us_ticker_init(void)
 {
     if (!cy_us_ticker_initialized) {
+
+#ifdef FEATURE_PSA
+        /*
+            There are two timers Timer0 and Timer1 available in PSoC64 and the 
+            Timer0 contains 8 channel and Timer1 contains 24 Channels. TF-M
+            regression tests make use of Timer0 Channel 1 and Timer0 Channel 2.
+            Therefore we are reserving the timer channels used by TF-M.
+            This is a temporary solution till we have a way to allocate dedicated
+            timers for TF-M and Mbed OS.
+        */
+        cyhal_resource_inst_t res = { CYHAL_RSC_TCPWM, 0, 0 };
+        if(CY_RSLT_SUCCESS != cyhal_hwmgr_reserve(&res)) {
+            MBED_ERROR(MBED_MAKE_ERROR(MBED_MODULE_DRIVER, MBED_ERROR_CODE_FAILED_OPERATION), "cyhal_timer_init");
+        }
+        res.channel_num = 1;
+        if(CY_RSLT_SUCCESS != cyhal_hwmgr_reserve(&res)) {
+            MBED_ERROR(MBED_MAKE_ERROR(MBED_MODULE_DRIVER, MBED_ERROR_CODE_FAILED_OPERATION), "cyhal_timer_init");
+        }
+#endif
         if (CY_RSLT_SUCCESS != cyhal_timer_init(&cy_us_timer, NC, NULL)) {
             MBED_ERROR(MBED_MAKE_ERROR(MBED_MODULE_DRIVER, MBED_ERROR_CODE_FAILED_OPERATION), "cyhal_timer_init");
         }
