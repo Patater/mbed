@@ -122,7 +122,7 @@
         ],
         "extra_labels": [
             "TFM",
-            "TARGET_TFM_V8M"
+            "TFM_V8M"
         ],
         "device_has": [
             "TRNG"
@@ -8542,6 +8542,62 @@
         "detect_code": [
             "5004"
         ]
+    },
+    "ARM_MUSCA_A1": {
+        "public": false,
+        "inherits": [
+            "Target"
+        ],
+        "default_toolchain": "ARMC6",
+        "extra_labels_add": [
+            "ARM_SSG",
+            "MUSCA_A1"
+        ],
+        "forced_reset_timeout": 7,
+        "release_versions": [
+            "5"
+        ]
+    },
+    "ARM_MUSCA_A1_PSA": {
+        "inherits": [
+            "PSA_V8_M_NSPE",
+            "ARM_MUSCA_A1"
+        ],
+        "core": "Cortex-M33-NS",
+        "supported_toolchains": [
+            "ARMC6",
+            "GCC_ARM",
+            "IAR"
+        ],
+        "device_has_add": [
+            "INTERRUPTIN",
+            "LPTICKER",
+            "SERIAL",
+            "SLEEP",
+            "USTICKER"
+        ],
+        "macros": [
+            "__STARTUP_CLEAR_BSS",
+            "MBED_FAULT_HANDLER_DISABLED",
+            "CMSIS_NVIC_VIRTUAL",
+            "LPTICKER_DELAY_TICKS=1",
+            "MBED_MPU_CUSTOM"
+        ],
+        "extra_labels_add": [
+            "MUSCA_A1_NS"
+        ],
+        "post_binary_hook": {
+            "function": "ArmMuscaA1Code.binary_hook"
+        },
+        "secure_image_filename": "tfm_s.bin",
+        "tfm_target_name": "MUSCA_A",
+        "tfm_bootloader_supported": true,
+        "tfm_default_toolchain": "ARMCLANG",
+        "tfm_supported_toolchains": [
+            "ARMCLANG",
+            "GNUARM"
+        ],
+        "tfm_delivery_dir": "TARGET_ARM_SSG/TARGET_MUSCA_A1/TARGET_MUSCA_A1_NS"
     },
     "RZ_A1XX": {
         "inherits": [
