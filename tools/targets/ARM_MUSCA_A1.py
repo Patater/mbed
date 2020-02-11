@@ -40,7 +40,7 @@ def musca_tfm_bin(t_self, non_secure_bin, secure_bin):
         os.makedirs(tempdir)
     flash_layout = path_join(MUSCA_A1_BASE, 'partition', 'flash_layout.h')
     image_macros = path_join(MUSCA_A1_BASE, 'partition', 'image_macros_preprocessed.c')
-    mcuboot_bin = path_join(MUSCA_A1_BASE, 'prebuilt', 'mcuboot.bin')
+    mcuboot_bin = path_join(MUSCA_A1_BASE, 'mcuboot.bin')
     ns_bin_name, ns_bin_ext = splitext(basename(non_secure_bin))
     concatenated_bin = path_join(tempdir, 'tfm_' + ns_bin_name + ns_bin_ext)
     signed_bin = path_join(tempdir, 'tfm_' + ns_bin_name + '_signed' + ns_bin_ext)
