@@ -128,7 +128,7 @@
 /**
  * mbed usec high-resolution ticker configuration
  */
-#define USEC_TIMER_DEV                   CMSDK_TIMER0_DEV_NS
+#define USEC_TIMER_DEV                   CMSDK_TIMER1_DEV_NS
 #define usec_interval_irq_handler        TIMER0_IRQHandler
 #define USEC_INTERVAL_IRQ                TIMER0_IRQn
 /** Timer frequency is equal to SYSTEM_CLOCK, defined in system_cmsdk_musca.c */
