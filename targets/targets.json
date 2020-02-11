@@ -122,7 +122,7 @@
         ],
         "extra_labels": [
             "TFM",
-            "TARGET_TFM_V8M"
+            "TFM_V8M"
         ],
         "device_has": [
             "TRNG"
@@ -8549,7 +8549,7 @@
             "Target"
         ],
         "default_toolchain": "ARMC6",
-        "extra_labels": [
+        "extra_labels_add": [
             "ARM_SSG",
             "MUSCA_A1"
         ],
@@ -8558,9 +8558,9 @@
             "5"
         ]
     },
-    "ARM_MUSCA_A1_NS": {
+    "ARM_MUSCA_A1_PSA": {
         "inherits": [
-            "NSPE_Target",
+            "PSA_V8_M_NSPE",
             "ARM_MUSCA_A1"
         ],
         "core": "Cortex-M33-NS",
@@ -8584,58 +8584,20 @@
             "MBED_MPU_CUSTOM"
         ],
         "extra_labels_add": [
-            "MUSCA_A1_NS",
-            "PSA",
-            "TFM"
+            "MUSCA_A1_NS"
         ],
         "post_binary_hook": {
             "function": "ArmMuscaA1Code.binary_hook"
         },
-        "secure_image_filename": "tfm.bin",
-        "overrides": {
-            "non-secure-rom-start": "0x000a0400",
-            "non-secure-rom-size": "0x5f800",
-            "non-secure-ram-start": "0x20011000",
-            "non-secure-ram-size": "0xf000"
-        }
-    },
-    "ARM_MUSCA_A1_S": {
-        "inherits": [
-            "SPE_Target",
-            "ARM_MUSCA_A1"
+        "secure_image_filename": "tfm_s.bin",
+        "tfm_target_name": "MUSCA_A",
+        "tfm_bootloader_supported": true,
+        "tfm_default_toolchain": "ARMCLANG",
+        "tfm_supported_toolchains": [
+            "ARMCLANG",
+            "GNUARM"
         ],
-        "core": "Cortex-M33",
-        "supported_toolchains": [
-            "ARMC6",
-            "GCC_ARM"
-        ],
-        "device_has_add": [
-            "FLASH"
-        ],
-        "macros": [
-            "__STARTUP_CLEAR_BSS_MULTIPLE",
-            "__STARTUP_COPY_MULTIPLE",
-            "MBED_MPU_CUSTOM",
-            "DAUTH_CHIP_DEFAULT",
-            "MBEDTLS_PSA_CRYPTO_SPM",
-            "MBEDTLS_ENTROPY_NV_SEED"
-        ],
-        "components_add": [
-            "FLASHIAP"
-        ],
-        "extra_labels_add": [
-            "MUSCA_A1_S",
-            "PSA",
-            "TFM"
-        ],
-        "deliver_to_target": "ARM_MUSCA_A1_NS",
-        "delivery_dir": "TARGET_ARM_SSG/TARGET_MUSCA_A1/TARGET_MUSCA_A1_NS/prebuilt",
-        "overrides": {
-            "secure-rom-start": "0x10020400",
-            "secure-rom-size": "0x7f800",
-            "secure-ram-start": "0x30000000",
-            "secure-ram-size": "0x11000"
-        }
+        "tfm_delivery_dir": "TARGET_ARM_SSG/TARGET_MUSCA_A1/TARGET_MUSCA_A1_NS"
     },
     "RZ_A1XX": {
         "inherits": [
