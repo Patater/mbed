@@ -59,6 +59,34 @@
 #define OS_IDLE_THREAD_STACK_SIZE   (MBED_CONF_RTOS_IDLE_THREAD_STACK_SIZE + EXTRA_IDLE_STACK + EXTRA_IDLE_STACK_DEBUG)
 #endif
 
+// The number of mutexes available to applications that need to use
+// CMSIS-RTOSv2 Object-specific Memory Pools
+#ifdef MBED_CONF_APP_OS_MUTEX_NUM
+#define OS_MUTEX_OBJ_MEM    1
+#define OS_MUTEX_NUM        MBED_CONF_APP_OS_MUTEX_NUM
+#endif
+
+// The number of semaphores available to applications that need to use
+// CMSIS-RTOSv2 Object-specific Memory Pools
+#ifdef MBED_CONF_APP_OS_SEMAPHORE_NUM
+#define OS_SEMAPHORE_OBJ_MEM 1
+#define OS_SEMAPHORE_NUM     MBED_CONF_APP_OS_SEMAPHORE_NUM
+#endif
+
+// The number of threads available to applications that need to use
+// CMSIS-RTOSv2 Object-specific Memory Pools
+#ifdef MBED_CONF_APP_OS_THREAD_NUM
+#define OS_THREAD_OBJ_MEM 1
+#define OS_THREAD_NUM MBED_CONF_APP_OS_THREAD_NUM
+#endif
+
+// The total amount of memory for all thread stacks combined available to
+// applications that need to use CMSIS-RTOSv2 Object-specific Memory Pools for
+// threads
+#ifdef MBED_CONF_APP_OS_THREAD_USER_STACK_SIZE
+#define OS_THREAD_USER_STACK_SIZE MBED_CONF_APP_OS_THREAD_USER_STACK_SIZE
+#endif
+
 #define OS_DYNAMIC_MEM_SIZE         0
 
 #if defined(OS_TICK_FREQ) && (OS_TICK_FREQ != 1000)
