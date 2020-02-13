@@ -439,18 +439,32 @@ def _copy_tfm_ns_files(source, target):
                 if os.path.isfile(join(src_folder, f)):
                     shutil.copy2(join(src_folder, f), join(dst_folder, f))
 
+    def copy_tf_regression_tests(folders):
+        for folder in folders:
+            src_folder = join(source, folder["src_folder"])
+            dst_folder = join(ROOT, os.pardir, folder["dst_folder"])
+            if not isdir(dst_folder):
+                os.makedirs(dst_folder)
+            for f in os.listdir(src_folder):
+                if os.path.isfile(join(src_folder, f)):
+                    shutil.copy2(join(src_folder, f), join(dst_folder, f))
+
     with open(join(dirname(__file__), "tfm_ns_import.json")) as ns_import:
         json_data = json.load(ns_import)
         logger.info("Copying NS API source from TF-M to Mbed OS")
-        copy_files(json_data["files"]["common"])
+        mbed_os_data = json_data["mbed-os"]
+        copy_files(mbed_os_data["files"]["common"])
         if "TFM_V8M" in TARGET_MAP[target].extra_labels:
-            copy_files(json_data["files"]["v8-m"])
+            copy_files(mbed_os_data["files"]["v8-m"])
         if "TFM_TWINCPU" in TARGET_MAP[target].extra_labels:
-            copy_files(json_data["files"]["dualcpu"])
+            copy_files(mbed_os_data["files"]["dualcpu"])
 
-        copy_folders(json_data["folders"]["common"])
+        copy_folders(mbed_os_data["folders"]["common"])
         if "TFM_TWINCPU" in TARGET_MAP[target].extra_labels:
-            copy_folders(json_data["folders"]["dualcpu"])
+            copy_folders(mbed_os_data["folders"]["dualcpu"])
+
+        tf_regression_data = json_data["tf-m-regression"]
+        copy_tf_regression_tests(tf_regression_data["folders"])
 
 def _build_tfm(args):
     """
