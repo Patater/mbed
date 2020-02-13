@@ -319,7 +319,7 @@ def _run_cmake_build(cmake_build_dir, debug, tgt):
 
     cmake_cmd = ['cmake', '-GUnix Makefiles']
     cmake_cmd.append('-DPROJ_CONFIG=' + (join(TF_M_BUILD_DIR,
-                        'trusted-firmware-m', 'configs/ConfigCoreIPC.cmake')))
+                        'trusted-firmware-m', 'configs/ConfigRegressionIPC.cmake')))
     cmake_cmd.append('-DTARGET_PLATFORM=' + tgt[1])
     cmake_cmd.append('-DCOMPILER=' + tgt[2])
     if debug:
