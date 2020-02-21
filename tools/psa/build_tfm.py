@@ -477,9 +477,9 @@ def _build_tfm(args):
     cmake_build_dir = join(TF_M_BUILD_DIR, 'trusted-firmware-m', 'cmake_build')
     if not isdir(cmake_build_dir):
         os.mkdir(cmake_build_dir)
-    else:
-        shutil.rmtree(cmake_build_dir)
-        os.mkdir(cmake_build_dir)
+    # else:
+    #     shutil.rmtree(cmake_build_dir)
+    #     os.mkdir(cmake_build_dir)
 
     if args.mcu:
         if args.toolchain:
