@@ -32,33 +32,25 @@
 CRYPTO_RELEASE ?= mbedcrypto-3.0.1
 CRYPTO_REPO_URL ?= git@github.com:ARMmbed/mbed-crypto.git
 
+#
 # Translate between Mbed Crypto namespace and Mbed OS namespace
+#
 TARGET_PREFIX:=..
 TARGET_INC:=$(TARGET_PREFIX)/inc
 TARGET_SRC:=$(TARGET_PREFIX)/src
 
-TLS_SRC := \
-	$(TARGET_SRC)/error.c \
-	$(TARGET_SRC)/version.c \
-	$(TARGET_SRC)/version_features.c \
-	# end
-
-# A folder structure is introduced here for targets that have both a Secure
-# Processing Environment (SPE) targets and Non-secure Processing Environment
-# (NSPE). Documentation for each folder as follows:
-# COMPONENT_PSA_SRV_IMPL - Include secure service implementation code. For
-# example PSA Crypto or PSA Secure Time implementations
-TARGET_SRV_IMPL:=$(TARGET_PREFIX)/platform/COMPONENT_PSA_SRV_IMPL
-# COMPONENT_NSPE - Include code that compiles ONLY to the NSPE image and never
-# compiles to the SPE image
-TARGET_NSPE:=$(TARGET_SRV_IMPL)/COMPONENT_NSPE
+# Any files that provide an Mbed-provided implementation of PSA should go to
+# the TARGET_MBED_SRV folder. For all other targets, the PSA Crypto
+# implementation is provided by TF-M.
+TARGET_MBED_SRV:=$(TARGET_PREFIX)/TARGET_MBED_PSA_SRV
+TARGET_PSA_INC:=$(TARGET_MBED_SRV)/inc
+TARGET_PSA_SRC:=$(TARGET_MBED_SRV)/src
 
 # Mbed Crypto source directory - hidden from mbed via TARGET_IGNORE
-CRYPTO_DIR:=TARGET_IGNORE/mbed-crypto
+CRYPTO_DIR:=TARGET_IGNORE/mbedtls
 CRYPTO_API:=$(CRYPTO_DIR)/include/psa
 OLD_CRYPTO_API:=$(CRYPTO_DIR)/include/mbedtls
 CRYPTO_GIT_CFG=$(CRYPTO_DIR)/.git/config
-
 
 .PHONY: all rsync clean update
 
@@ -68,8 +60,10 @@ rsync:
 	#
 	# Copying Mbed Crypto headers to includes...
 	rm -rf $(TARGET_INC)
+	rm -rf $(TARGET_PSA_INC)
 	mkdir -p $(TARGET_INC)
-	rsync -a --delete --exclude='crypto_struct.h' $(CRYPTO_API) $(TARGET_INC)/
+	mkdir -p $(TARGET_PSA_INC)
+	rsync -a --delete $(CRYPTO_API) $(TARGET_PSA_INC)/
 	# Copy legacy Mbed TLS crypto headers, excluding headers duplicated in
 	# Mbed TLS.
 	rsync -a --delete \
@@ -84,22 +78,18 @@ rsync:
 	cp $(CRYPTO_DIR)/LICENSE $(TARGET_PREFIX)/
 	#
 	# Copying Mbed Crypto into Mbed OS...
-	rm -rf $(TARGET_SRV_IMPL)
+	rm -rf $(TARGET_PSA_SRC)
 	rm -rf $(TARGET_SRC)
 
-	mkdir -p $(TARGET_SRV_IMPL)
-	mkdir -p $(TARGET_NSPE)
+	mkdir -p $(TARGET_PSA_SRC)
 
-	rsync -a --delete $(CRYPTO_API)/crypto_struct.h $(TARGET_NSPE)/
-	rsync -a --delete $(CRYPTO_DIR)/library/psa_*.c $(TARGET_SRV_IMPL)/
-	rsync -a --delete $(CRYPTO_DIR)/library/psa_*.h $(TARGET_SRV_IMPL)/
+	rsync -a --delete $(CRYPTO_DIR)/library/psa_*.c $(TARGET_PSA_SRC)/
+	rsync -a --delete $(CRYPTO_DIR)/library/psa_*.h $(TARGET_PSA_SRC)/
 	rsync -a --delete $(CRYPTO_DIR)/library/*.c $(TARGET_SRC)/
 	#
-	# Remove PSA-specific C files (they go into $(TARGET_SRV_IMPL))
+	# Remove PSA-specific C files (they go into $(TARGET_PSA_SRC))
 	rm -rf $(TARGET_SRC)/psa_*.c
 	#
-	# Remove files that duplicate Mbed TLS
-	rm -rf $(TLS_SRC)
 
 update: $(CRYPTO_GIT_CFG)
 	#
@@ -126,6 +116,7 @@ clean:
 	rm -f $(TARGET_PREFIX)/VERSION.txt
 	rm -f $(TARGET_PREFIX)/AUTHORS.txt
 	rm -rf $(TARGET_INC)
+	rm -rf $(TARGET_PSA_INC)
 	rm -rf $(TARGET_SRC)
 	rm -rf $(CRYPTO_DIR)
-	rm -rf $(TARGET_SRV_IMPL)
+	rm -rf $(TARGET_PSA_SRC)
