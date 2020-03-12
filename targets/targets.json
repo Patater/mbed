@@ -8662,44 +8662,6 @@
             "non-secure-ram-size": "0xf000"
         }
     },
-    "ARM_MUSCA_A1_S": {
-        "inherits": [
-            "SPE_Target",
-            "ARM_MUSCA_A1"
-        ],
-        "core": "Cortex-M33",
-        "supported_toolchains": [
-            "ARMC6",
-            "GCC_ARM"
-        ],
-        "device_has_add": [
-            "FLASH"
-        ],
-        "macros": [
-            "__STARTUP_CLEAR_BSS_MULTIPLE",
-            "__STARTUP_COPY_MULTIPLE",
-            "MBED_MPU_CUSTOM",
-            "DAUTH_CHIP_DEFAULT",
-            "MBEDTLS_PSA_CRYPTO_SPM",
-            "MBEDTLS_ENTROPY_NV_SEED"
-        ],
-        "components_add": [
-            "FLASHIAP"
-        ],
-        "extra_labels_add": [
-            "MUSCA_A1_S",
-            "PSA",
-            "TFM"
-        ],
-        "deliver_to_target": "ARM_MUSCA_A1_NS",
-        "delivery_dir": "TARGET_ARM_SSG/TARGET_MUSCA_A1/TARGET_MUSCA_A1_NS/prebuilt",
-        "overrides": {
-            "secure-rom-start": "0x10020400",
-            "secure-rom-size": "0x7f800",
-            "secure-ram-start": "0x30000000",
-            "secure-ram-size": "0x11000"
-        }
-    },
     "RZ_A1XX": {
         "inherits": [
             "Target"

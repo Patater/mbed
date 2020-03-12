@@ -24,7 +24,7 @@
 #ifndef MBED_CMSIS_NVIC_H
 #define MBED_CMSIS_NVIC_H
 
-#include "../../partition/region_defs.h"
+#include "../partition/region_defs.h"
 
 #define NVIC_NUM_VECTORS        (16 + 76)
 /** Location of vectors to move in RAM */
