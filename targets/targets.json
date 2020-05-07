@@ -890,6 +890,9 @@
             "SD",
             "FLASHIAP"
         ],
+        "features_add": [
+            "PSA"
+        ],
         "core": "Cortex-M4F",
         "supported_toolchains": [
             "ARM",
@@ -905,7 +908,6 @@
             "KPSDK_CODE",
             "MCU_K64F",
             "Freescale_EMAC",
-            "PSA",
             "MBED_PSA_SRV"
         ],
         "is_disk_virtual": true,
@@ -1150,6 +1152,9 @@
             "SD",
             "FLASHIAP"
         ],
+        "features_add": [
+            "PSA"
+        ],
         "core": "Cortex-M4F",
         "supported_toolchains": [
             "ARM",
@@ -1162,7 +1167,6 @@
             "KSDK2_MCUS",
             "FRDM",
             "Freescale_EMAC",
-            "PSA",
             "MBED_PSA_SRV"
         ],
         "is_disk_virtual": true,
@@ -2507,10 +2511,12 @@
                 "macro_name": "CLOCK_SOURCE"
             }
         },
+        "features_add": [
+            "PSA"
+        ],
         "extra_labels_add": [
             "STM32F4",
             "STM32F429xI",
-            "PSA",
             "MBED_PSA_SRV"
         ],
         "macros_add": [
@@ -5888,8 +5894,10 @@
             "ARM_SSG",
             "MUSCA_A1",
             "MUSCA_A1_NS",
-            "PSA",
             "TFM"
+        ],
+        "features_add": [
+            "PSA"
         ],
         "post_binary_hook": {
             "function": "ArmMuscaA1Code.binary_hook"
@@ -5936,8 +5944,10 @@
             "ARM_SSG",
             "MUSCA_B1",
             "MUSCA_B1_NS",
-            "PSA",
             "TFM"
+        ],
+        "features_add": [
+            "PSA"
         ],
         "post_binary_hook": {
             "function": "ArmMuscaB1Code.binary_hook"
@@ -9139,8 +9149,10 @@
             "GD32F4XX",
             "GD32F450ZI",
             "GD_EMAC",
-            "PSA",
             "MBED_PSA_SRV"
+        ],
+        "features_add": [
+            "PSA"
         ],
         "device_has_add": [
             "RTC",
