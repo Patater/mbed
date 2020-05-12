@@ -1,4 +1,4 @@
-/* Copyright (c) 2018 ARM Limited
+/* Copyright (c) 2018-2020 ARM Limited
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -34,13 +34,13 @@ MBED_WEAK void trng_free(trng_t *obj)
 
 MBED_WEAK int trng_get_bytes(trng_t *obj, uint8_t *output, size_t length, size_t *output_length)
 {
-   ((void)(obj));
-    if (output == NULL || output_length == NULL){
+    ((void)(obj));
+    if (output == NULL || output_length == NULL) {
         return -1;
     }
 
     psa_status_t status = psa_crypto_init();
-    if(status != PSA_SUCCESS) {
+    if (status != PSA_SUCCESS) {
         return -1;
     }
 
