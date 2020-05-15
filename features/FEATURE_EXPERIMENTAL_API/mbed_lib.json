@@ -1,0 +1,7 @@
+{
+    "name": "experimental_api",
+    "help": "Enables features that are marked as experimental. These APIs can change in any version.",
+    "config": {
+        "present": 1
+    }
+}
