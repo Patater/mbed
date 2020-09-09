@@ -20,6 +20,9 @@
 
 #include <inttypes.h>
 #include <sys/types.h>
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
 #include <stdio.h>
 
 #include <time.h>
@@ -362,7 +365,10 @@ namespace mbed {
 #define STDOUT_FILENO 1
 #define STDERR_FILENO 2
 
-#ifndef _STAT_VER
+//XXX
+// If the stat struct is not already available.
+//#ifndef _STAT_VER
+#ifdef _WIN32
 struct stat {
     dev_t     st_dev;     ///< Device ID containing file
     ino_t     st_ino;     ///< File serial number

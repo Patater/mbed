@@ -22,8 +22,11 @@
 #include "randLIB.h"
 #include "platform/arm_hal_random.h"
 
+/* XXX Why care about RAND_MAX? */
+#if 0
 #if ((RAND_MAX+1) & RAND_MAX) != 0
 #error "RAND_MAX isn't 2^n-1 :("
+#endif
 #endif
 
 int counter = 1;

@@ -63,6 +63,12 @@ add_subdirectory(rtos)
 add_subdirectory(storage)
 add_subdirectory(targets)
 
+#if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND BUILD_TESTING)
+if(NOT CMAKE_CROSSCOMPILING)
+    add_subdirectory(UNITTESTS)
+endif()
+#endif()
+
 
 #
 # Configures the application
