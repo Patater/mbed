@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 #
 # Copyright (c) 2017-2018 Future Electronics
 # Copyright (c) 2018-2019 Cypress Semiconductor Corporation

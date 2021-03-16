@@ -51,10 +51,8 @@ function(mbed_post_build_psoc6_sign_image
     cm4_img_id
     cortex_m0_hex
 )
-    find_package(Python3)
-
     set(post_build_command
-        COMMAND ${Python3_EXECUTABLE} ${MBED_PATH}/targets/TARGET_Cypress/scripts/PSOC6.py
+        COMMAND ${MBED_PATH}/targets/TARGET_Cypress/scripts/PSOC6.py
             sign
             --build-dir ${CMAKE_BINARY_DIR}
             --m0hex-filename ${m0hex_filename}
