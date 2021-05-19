@@ -66,9 +66,9 @@ macro(mbed_greentea_add_test)
     #    -D "MBED_TEST_LINK_LIBRARIES=mbed-baremetal ext-errorlogging"
     if (DEFINED MBED_TEST_LINK_LIBRARIES)
         separate_arguments(MBED_TEST_LINK_LIBRARIES)
-        list(APPEND MBED_GREENTEA_TEST_REQUIRED_LIBS ${MBED_TEST_LINK_LIBRARIES} mbed-greentea)
+        list(APPEND MBED_GREENTEA_TEST_REQUIRED_LIBS ${MBED_TEST_LINK_LIBRARIES} greentea-client mbed-unity mbed-utest)
     else()        
-        list(APPEND MBED_GREENTEA_TEST_REQUIRED_LIBS mbed-greentea)
+        list(APPEND MBED_GREENTEA_TEST_REQUIRED_LIBS greentea-client mbed-unity mbed-utest)
     endif()
 
     target_link_libraries(${TEST_NAME}
